@@ -62,16 +62,21 @@ def scrape(query, altquery):
         url = base_url + '/api/v2.0/indexers/' + filter + '/results?apikey=' + api_key + '&Query=' + query
         try:
             response = session.get(url, timeout=60)
+            ui_print(f'[debug] jackett: request {url}')
         except requests.exceptions.Timeout:
+            ui_print(f'[debug] jackett: request error {url}')
             ui_print('[jackett] error: jackett request timed out. Reduce the number of jackett indexers, make sure your indexers are healthy and enable the jackett setting "CORS".')
             return []
         except :
+            ui_print(f'[debug] jackett: request error {url}')
             ui_print('[jackett] error: jackett couldnt be reached. Make sure your jackett base url is correctly formatted (default: http://localhost:9117).')
             return []
         if not response.status_code == 200:
             if response.status_code in [401,403]:
+                ui_print(f'[debug] jackett: request error {url}')
                 ui_print('[jackett] error '+str(response.status_code)+': it seems your api key is not working.')
             else:
+                ui_print(f'[debug] jackett: request error {url}')
                 ui_print('[jackett] error '+str(response.status_code)+': it seems jackett is reachable, but jackett returned an internal error.')
             return []
         try:
@@ -124,9 +129,11 @@ def scrape(query, altquery):
     return scraped_releases
 
 def resolve(result):
+    ui_print(f'[debug] jackett: resolve {result.Link}')
     scraped_releases = []
     try:
         link = session.get(result.Link, allow_redirects=False, timeout=float(resolver_timeout))
+        ui_print(f'[debug] jackett: link {result.Link} \n=> {link.headers["Location"]}')
         if 'Location' in link.headers:
             if regex.search(r'(?<=btih:).*?(?=&)', str(link.headers['Location']), regex.I):
                 if not result.Tracker == None and not result.Size == None:
@@ -139,6 +146,7 @@ def resolve(result):
                     scraped_releases += [releases.release('[jackett: unnamed]', 'torrent', result.Title, [],float(result.Size) / 1000000000, [link.headers['Location']],seeders=result.Seeders)]
             return scraped_releases
         elif link.headers['Content-Type'] == "application/x-bittorrent":
+            ui_print(f'[debug] jackett: elif link.headers[Content-Type] == "application/x-bittorrent":')
             magnet = releases.torrent2magnet(link.content)
             if not result.Tracker == None and not result.Size == None:
                 scraped_releases += [
@@ -150,7 +158,8 @@ def resolve(result):
                 scraped_releases += [
                     releases.release('[jackett: unnamed]', 'torrent', result.Title, [], float(result.Size) / 1000000000,[magnet], seeders=result.Seeders)]
             return scraped_releases
-    except:
+    except Exception as e:
+        ui_print(f'[debug] jackett: exception {e}')
         ui_print("[jackett] error: resolver couldnt get magnet/torrent for release: " + result.Title,ui_settings.debug)
         return scraped_releases
 

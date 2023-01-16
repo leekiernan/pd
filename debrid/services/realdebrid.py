@@ -39,6 +39,7 @@ def get(url):
     headers = {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36','authorization': 'Bearer ' + api_key}
     try:
+        ui_print(f'[debug] realdebrid: get {url}')
         response = session.get(url, headers=headers)
         logerror(response)
         response = json.loads(response.content, object_hook=lambda d: SimpleNamespace(**d))
@@ -52,6 +53,7 @@ def post(url, data):
     headers = {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36','authorization': 'Bearer ' + api_key}
     try:
+        ui_print(f'[debug] realdebrid: post {url}')
         response = session.post(url, headers=headers, data=data)
         logerror(response)
         response = json.loads(response.content, object_hook=lambda d: SimpleNamespace(**d))
@@ -68,6 +70,7 @@ def post(url, data):
 def delete(url):
     headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36','authorization': 'Bearer ' + api_key}
     try:
+        ui_print(f'[debug] realdebrid: delete {url}')
         requests.delete(url, headers=headers)
         # time.sleep(1)
     except Exception as e:

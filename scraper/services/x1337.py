@@ -18,6 +18,7 @@ def scrape(query, altquery):
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36'}
         url = 'http://1337x.to/search/' + str(query) + '/1/'
         try:
+            ui_print(f'[debug] 1337x: get {url}')
             response = session.get(url, headers=headers)
             soup = BeautifulSoup(response.content, 'html.parser')
             torrentList = soup.select('a[href*="/torrent/"]')
@@ -31,6 +32,7 @@ def scrape(query, altquery):
                     if regex.match(r'(' + altquery.replace('.', '\.').replace("\.*", ".*") + ')', title,
                                     regex.I):
                         link = torrent['href']
+                        ui_print(f'[debug] 1337x: get {link}')
                         response = session.get('http://1337x.to' + link, headers=headers)
                         soup = BeautifulSoup(response.content, 'html.parser')
                         download = soup.select('a[href^="magnet"]')[0]['href']
@@ -46,7 +48,8 @@ def scrape(query, altquery):
                             size = float(size)
                         scraped_releases += [
                             releases.release('[1337x]', 'torrent', title, [], size, [download], seeders=int(seeders))]
-        except:
+        except Exception as e:
+            ui_print(f'[debug] 1337x exception {e}')
             response = None
             ui_print('1337x error: exception')
     return scraped_releases

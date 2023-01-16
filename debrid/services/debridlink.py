@@ -19,7 +19,7 @@ def setup(cls, new=False):
 def logerror(response):
     if not response.status_code == 200:
         ui_print("[debridlink] error "+str(response.status_code)+": " + str(response.content), debug=ui_settings.debug)
-    if 'error' in str(response.content): 
+    if 'error' in str(response.content):
         try:
             response2 = json.loads(response.content, object_hook=lambda d: SimpleNamespace(**d))
             if not response2.error == 'authorization_pending':

@@ -21,6 +21,7 @@ def logerror(response):
         ui_print("plex error: (401 unauthorized): user token does not seem to work. check your plex user settings.")
 
 def get(url, timeout=30):
+    ui_print(f'[debug] plex: get {url}')
     try:
         response = session.get(url, headers=headers, timeout=timeout)
         logerror(response)
@@ -33,6 +34,7 @@ def get(url, timeout=30):
 def post(url, data):
     try:
         response = session.post(url, data=data, headers=headers)
+        ui_print(f'[debug] plex: post {url}')
         logerror(response)
         response = json.loads(response.content, object_hook=lambda d: SimpleNamespace(**d))
         return response
@@ -687,7 +689,7 @@ class library(classes.library):
                             episode.grandparentEID = item.EID
             except:
                 ui_print('done')
-                ui_print("[plex error]: couldnt get extended metadata for library item: " + item.query())  
+                ui_print("[plex error]: couldnt get extended metadata for library item: " + item.query())
         ui_print('done')
         current_library = copy.deepcopy(list_)
         return list_

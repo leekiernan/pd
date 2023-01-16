@@ -29,6 +29,7 @@ def scrape(query, altquery):
                     query) + '&ranked=0&category=52;51;50;49;48;46;45;44;41;17;14&token=' + token + '&limit=100&format=json_extended&app_id=fuckshit'
             try:
                 response = session.get(url, headers=headers)
+                ui_print(f'[debug] rarbg: request {url}')
                 if not response.status_code == 429:
                     response = json.loads(response.content, object_hook=lambda d: SimpleNamespace(**d))
                     if hasattr(response, "error"):
@@ -47,8 +48,9 @@ def scrape(query, altquery):
                             retries += -1
                 else:
                     retries += -1
-            except:
+            except Exception as e:
                 response = None
+                ui_print(f'[debug] rarbg: exception {e}')
                 ui_print('rarbg error: (parse exception)', debug=ui_settings.debug)
             retries += 1
             time.sleep(1 + random.randint(0, 2))

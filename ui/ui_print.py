@@ -22,6 +22,9 @@ def logo(path=''):
     print()
     sys.stdout.flush()
 
+def ui_debug(string: str):
+  ui_print('[debug] {str}')
+
 def ui_print(string: str, debug="true"):
     global sameline
     global sameline_log

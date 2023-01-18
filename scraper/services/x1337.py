@@ -49,7 +49,7 @@ def scrape(query, altquery):
                         scraped_releases += [
                             releases.release('[1337x]', 'torrent', title, [], size, [download], seeders=int(seeders))]
         except Exception as e:
-              ui_debug(f'1337x exception {e}')
+            ui_debug(f'1337x exception {e}')
             response = None
             ui_print('1337x error: exception')
     return scraped_releases

@@ -45,9 +45,9 @@ def scrape(query, altquery):
                             else:
                                 ui_print('rarbg error: could not fetch new token', debug=ui_settings.debug)
                         elif hasattr(response, "rate_limit"):
-                            retries += -1
+                            retries += 0.1
                 else:
-                    retries += -1
+                    retries += 0.1
             except Exception as e:
                 response = None
                 ui_debug(f'[rarbg]: exception {e}')

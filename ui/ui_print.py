@@ -22,8 +22,8 @@ def logo(path=''):
     print()
     sys.stdout.flush()
 
-def ui_debug(string: str):
-  ui_print('[debug] {str}')
+def ui_debug(str):
+    ui_print(f'[debug] {str}'.format(**locals()))
 
 def ui_print(string: str, debug="true"):
     global sameline

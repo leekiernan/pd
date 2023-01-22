@@ -24,7 +24,10 @@ def logo(path=''):
     sys.stdout.flush()
 
 def ui_debug(str):
-    ui_print(f'[debug] {str}'.format(**locals()))
+    try :
+        ui_print(f'[debug] {str}'.format(**locals()))
+    except Exception as e:
+        ui_print(f'[debug error] {e}')
 
 def set_log_dir(config):
     global config_dir

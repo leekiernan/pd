@@ -1065,7 +1065,7 @@ class media:
                 ver_dld = False
                 for release in copy.deepcopy(self.Releases):
                     self.Releases = [release,]
-                    ui_debug(f'[classes debrid_download] {release}')
+                    ui_debug(f'[classes] debrid_download {release.title}')
                     if hasattr(release,"cached") and len(release.cached) > 0:
                         if debrid.download(self, stream=True,force=force):
                             self.downloaded()

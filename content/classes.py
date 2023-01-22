@@ -72,7 +72,7 @@ class library:
         return activeservices
 
 class refresh:
-    
+
     active = []
 
     def setup(cls, new=False):
@@ -116,7 +116,7 @@ class refresh:
         return activeservices
 
 class ignore:
-    
+
     active = []
     ignored = []
 
@@ -151,7 +151,7 @@ class ignore:
                 setting.setup()
                 if not cls.name in ignore.active:
                     ignore.active += [cls.name]
-    
+
     def __new__(cls):
         activeservices = []
         for servicename in ignore.active:
@@ -165,13 +165,13 @@ class ignore:
             ui_print("ignoring item of type '" + self.__module__ + "' on service '" + service.__module__ + "'",ui_settings.debug)
             self.match(service.__module__)
             service.add(self)
-    
+
     def remove(self):
         for service in ignore():
             ui_print("un-ignoring item of type '" + self.__module__ + "' on service '" + service.__module__ + "'",ui_settings.debug)
             self.match(service.__module__)
             service.remove(self)
-    
+
     def check(self):
         check = False
         for service in ignore():
@@ -181,7 +181,7 @@ class ignore:
         return check
 
 class media:
-    
+
     ignore_queue = []
     downloaded_versions = []
 
@@ -330,7 +330,7 @@ class media:
         elif self.type == 'episode':
             title = title.replace('.' + str(self.grandparentYear), '')
             return title + '.S' + str("{:02d}".format(self.parentIndex)) + 'E' + str("{:02d}".format(self.index)) + '.'
-    
+
     def anime_query(self,title=""):
         if title == "":
             if self.type == 'movie':
@@ -412,7 +412,7 @@ class media:
                         if hasattr(season,'Episodes'):
                             for episode in season.Episodes:
                                 episode.alternate_titles = self.alternate_titles
-    
+
     def deviation(self):
         self.versions()
         if not self.isanime():
@@ -484,7 +484,7 @@ class media:
                 self.anime_count = '-0*(' + str(self.anime_count) + '|' + str(self.anime_count+1) + ')'
             return True
         return False
-    
+
     def genre(self):
         genres = []
         if hasattr(self,'genres'):
@@ -496,7 +496,7 @@ class media:
                 for gen in self.Genre:
                     genres += [gen.slug]
         return genres
-        
+
     def versions(self):
         versions = []
         for version in releases.sort.versions:
@@ -515,14 +515,14 @@ class media:
                     if missing == True:
                         break
                 if not missing:
-                    versions.remove(version)            
+                    versions.remove(version)
             elif self.type == 'season':
                 for episode in self.Episodes:
                     if not episode.query() + ' [' + version.name + ']' in media.downloaded_versions:
                         missing = True
                         break
                 if not missing:
-                    versions.remove(version)   
+                    versions.remove(version)
         if self in media.ignore_queue:
             match = next((x for x in media.ignore_queue if self == x), None)
             self.ignored_count = match.ignored_count
@@ -697,7 +697,7 @@ class media:
                             if self == episode:
                                 return True
             return False
-    
+
     def uncollected(self, list):
         if self.type == 'movie':
             if not self.collected(list):
@@ -765,7 +765,7 @@ class media:
                             i += 1
                         if not len(self.Releases) == 0:
                             self.year = year
-                            break                        
+                            break
                     debrid_downloaded, retry = self.debrid_download(force=True)
                     if debrid_downloaded:
                         refresh_ = True
@@ -1065,6 +1065,7 @@ class media:
                 ver_dld = False
                 for release in copy.deepcopy(self.Releases):
                     self.Releases = [release,]
+                    ui_debug(f'[classes debrid_download] {release}')
                     if hasattr(release,"cached") and len(release.cached) > 0:
                         if debrid.download(self, stream=True,force=force):
                             self.downloaded()

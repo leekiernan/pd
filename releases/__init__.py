@@ -114,7 +114,7 @@ class sort:
         return
 
     class version:
-        
+
         def setup(name, version_, new=False):
             back = False
             default = version_[3]
@@ -1222,7 +1222,7 @@ class sort:
             ["retries","<=","48"],
             ["media type","all",""],
          ],
-         "true", 
+         "true",
          [
             ["cache status", "requirement", "cached", ""],
             ["resolution", "requirement", "<=", "1080"],
@@ -1365,7 +1365,7 @@ class torrent2magnet:
         return 'magnet:?' \
                 + 'xt=urn:btih:' + digest \
                 + '&dn=' + metadata[b'info'][b'name'].decode() \
-                + '&tr=' + metadata[b'announce'].decode() 
+                + '&tr=' + metadata[b'announce'].decode()
 
 def print_releases(scraped_releases):
     longest_file = 0

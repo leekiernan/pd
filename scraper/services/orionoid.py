@@ -12,6 +12,7 @@ default_opts = [["limitcount","5"],["sortvalue","popularity"],["streamtype","tor
 session = requests.Session()
 
 def get(url):
+    ui_debug(f'[orionoid]: get {url}')
     try:
         response = session.get(url)
         response = json.loads(response.content, object_hook=lambda d: SimpleNamespace(**d))

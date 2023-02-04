@@ -362,7 +362,7 @@ class media:
             return title.replace('.',' ')
         elif self.type == 'season':
             title = title.replace('.' + str(self.parentYear), '')
-            return title.replace('.',' ') + ' ' + str(self.anime_season) + ' '
+            return title.replace('.',' ') + ' '
         elif self.type == 'episode':
             title = title.replace('.' + str(self.grandparentYear), '')
             return title.replace('.',' ') + ' ' + str(self.anime_count)
@@ -488,10 +488,10 @@ class media:
                 return '(.*?)(' + title + '.)(.*?)(' + str(self.year) + '|' + str(self.year - 1) + '|' + str(self.year + 1) + ')'
             elif self.type == 'show':
                 title = title.replace('.' + str(self.year), '')
-                return '(.*?)(' + title + '.)(.*?)('+self.anime_count+'|complete)'
+                return '(.*?)(' + title + '.)(.*?)('+self.anime_count+'|(complete)|(seasons?.[0-9]+.[0-9]+)|(S[0-9]+[^E]S?[0-9]+))'
             elif self.type == 'season':
                 title = title.replace('.' + str(self.parentYear), '')
-                return '(.*?)(' + title + '.)(.*?)(season.' + str(self.index) + '|season.' + str("{:02d}".format(self.index)) + '|S?' + str("{:02d}".format(self.index)) + '|'+str(self.index)+'|'+self.anime_count+')'
+                return '(.*?)(' + title + '.)(.*?)(season.0*' + str(self.index) + '|S0*' + str(self.index) + '(?!E?[0-9])|'+self.anime_count+')'
             elif self.type == 'episode':
                 title = title.replace('.' + str(self.grandparentYear), '')
                 return '(.*?)(' + title + '.)([^1-9]*?)(S' + str("{:02d}".format(self.parentIndex)) + '.?E' + str("{:02d}".format(self.index)) + '|'+self.anime_count+'(?!E?[0-9]))'
@@ -617,23 +617,21 @@ class media:
 
     def released(self):
         try:
-            released = datetime.datetime.today() - datetime.datetime.strptime(self.originallyAvailableAt,'%Y-%m-%d')
+            released = datetime.datetime.utcnow() - datetime.datetime.strptime(self.originallyAvailableAt,'%Y-%m-%d')
+            for version in self.versions():
+                for i,trigger in enumerate(version.triggers):
+                    if trigger[0] == "airtime offset":
+                        released = datetime.datetime.utcnow() - datetime.datetime.strptime(self.originallyAvailableAt,'%Y-%m-%d') - datetime.timedelta(hours=float(trigger[2]))
             if self.type == 'movie':
                 if released.days >= -30 and released.days <= 60:
-                    if self.available():
-                        return True
-                    else:
-                        return False
+                    return self.available()
                 return released.days > 0
             else:
                 if released.days >= -1 and released.days <= 1:
-                    if self.available():
-                        return True
-                    else:
-                        return False
+                    return self.available()
                 return released.days >= 0
         except Exception as e:
-            ui_print("media error: (attr exception): " + str(e), debug=ui_settings.debug)
+            ui_print("media error: (released exception): " + str(e), debug=ui_settings.debug)
             return False
 
     def available(self):
@@ -643,12 +641,18 @@ class media:
         if (self.watchlist == plex.watchlist and len(trakt.users) > 0) or self.watchlist == trakt.watchlist:
             if self.watchlist == plex.watchlist:
                 self.match('content.services.trakt')
+            offset = "0"
+            for version in self.versions():
+                for i,trigger in enumerate(version.triggers):
+                    if trigger[0] == "airtime offset":
+                        offset = trigger[2]
+            released = datetime.datetime.utcnow() - datetime.datetime.strptime(self.originallyAvailableAt,'%Y-%m-%d') - datetime.timedelta(hours=float(offset))
             trakt_match = self
             if not trakt_match == None:
                 trakt.current_user = trakt.users[0]
                 try:
                     if trakt_match.type == 'show':
-                        return datetime.datetime.utcnow() > datetime.datetime.strptime(trakt_match.first_aired,'%Y-%m-%dT%H:%M:%S.000Z')
+                        return datetime.datetime.utcnow() > datetime.datetime.strptime(trakt_match.first_aired,'%Y-%m-%dT%H:%M:%S.000Z') - datetime.timedelta(hours=float(offset))
                     elif trakt_match.type == 'movie':
                         release_date = None
                         releases, header = trakt.get(
@@ -677,18 +681,19 @@ class media:
                                 if regex.search(r'(latest|new).*?(releases)', trakt_list.name, regex.I):
                                     match = True
                         # if release_date and delay have passed or the movie was released early
-                        return datetime.datetime.utcnow() > datetime.datetime.strptime(release_date,'%Y-%m-%d') or match
+                        return datetime.datetime.utcnow() > datetime.datetime.strptime(release_date,'%Y-%m-%d') - datetime.timedelta(hours=float(offset)) or match
                     elif trakt_match.type == 'season':
                         try:
-                            return datetime.datetime.utcnow() > datetime.datetime.strptime(trakt_match.first_aired,'%Y-%m-%dT%H:%M:%S.000Z')
+                            return datetime.datetime.utcnow() > datetime.datetime.strptime(trakt_match.first_aired,'%Y-%m-%dT%H:%M:%S.000Z') - datetime.timedelta(hours=float(offset))
                         except:
                             return True
                     elif trakt_match.type == 'episode':
-                        return datetime.datetime.utcnow() > datetime.datetime.strptime(trakt_match.first_aired,'%Y-%m-%dT%H:%M:%S.000Z')
-                except:
+                        return datetime.datetime.utcnow() > datetime.datetime.strptime(trakt_match.first_aired,'%Y-%m-%dT%H:%M:%S.000Z') - datetime.timedelta(hours=float(offset))
+                except Exception as e:
+                    ui_print("media error: (availability exception): " + str(e), debug=ui_settings.debug)
                     return False
         try:
-            released = datetime.datetime.today() - datetime.datetime.strptime(self.originallyAvailableAt,'%Y-%m-%d')
+            released = datetime.datetime.utcnow() - datetime.datetime.strptime(self.originallyAvailableAt,'%Y-%m-%d')
             if released.days < 0:
                 return False
             return True
@@ -775,8 +780,8 @@ class media:
         refresh_ = False
         i = 0
         self.Releases = []
-        if self.type in ["movie","show"] and (not hasattr(self,"title") or self.title == ""):
-            ui_print("error: media item has no title. This unknown movie/show might not be released yet.")
+        if self.type in ["movie","show"] and ((not hasattr(self,"title") or self.title == "" or self.title == None) or (not hasattr(self,"year") or self.year == None or self.year == "")):
+            ui_print("error: media item has no title or release year. This unknown movie/show might not be released yet.")
             ui_print("If you have not connected a trakt account to plex_debrid, its recommended to do so as it will help plex_debrid find more accurate metadata.")
             return
         scraper.services.overwrite = []

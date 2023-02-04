@@ -54,7 +54,7 @@ This is a work in progress, and im not a professional programmer. shits not read
 
 Feel free to ask any questions on github [discussions](https://github.com/itsToggle/plex_debrid/discussions) or create a new [issue](https://github.com/itsToggle/plex_debrid/issues) if you find a bug or have an idea for an improvement.
 
-If github is not your cup of tee, join the plex_debrid [discord server](https://discord.gg/UKkPeRdukx) or find me on [reddit](https://www.reddit.com/user/itsToggle)
+If github is not your cup of tee, join the plex_debrid [discord server](https://discord.gg/u3vTDGjeKE) or find me on [reddit](https://www.reddit.com/user/itsToggle)
  
 ## Setup:
 
@@ -372,6 +372,20 @@ If you want to run plex_debrid on a VPS or Seedbox, please keep in mind that som
 >  
 >  - To refresh your jellyfin libraries after a succesful download, navigate to '/Settings/Library Service/Library update service/Edit/'
 >  - plex_debrid is currently only able to refresh your entire jellyfinlibrary. Partial library scans to come shortly!
+>
+></details>
+>
+><details>
+>  <summary><b><u><img src="https://hotio.dev/webhook-avatars/overseerr.png" height="16"> Overseerr requests:</u></b></summary>
+> 
+>  - To mark your overserr requests as available after a succesful download, navigate to '/Settings/Library Service/Library update service/Edit/'
+>
+></details>
+>
+><details>
+>  <summary><b><u><img src="https://raw.githubusercontent.com/Fallenbagel/jellyseerr/main/public/android-chrome-512x512.png" height="16"> Jellyseerr requests:</u></b></summary>
+> 
+>  - To mark your jellyseerr requests as available after a succesful download, navigate to '/Settings/Library Service/Library update service/Edit/'
 >
 ></details>
  

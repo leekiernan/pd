@@ -85,17 +85,21 @@ class watchlist(classes.watchlist):
         if hasattr(item, 'user'):
             if isinstance(item.user[0], list):
                 for user in item.user:
-                    ui_print('[plex] item: "' + item.title + '" removed from ' + user[0] + '`s watchlist')
-                    url = 'https://metadata.provider.plex.tv/actions/removeFromWatchlist?ratingKey=' + item.ratingKey + '&X-Plex-Token=' + \
-                            user[1]
-                    response = session.put(url, data={'ratingKey': item.ratingKey})
+                    url = 'https://metadata.provider.plex.tv/actions/removeFromWatchlist?ratingKey=' + item.ratingKey + '&X-Plex-Token=' + user[1]
+                    try:
+                        response = session.put(url, data={'ratingKey': item.ratingKey})
+                        ui_print('[plex] item: "' + item.title + '" removed from ' + user[0] + '`s watchlist')
+                    except:
+                        ui_print('[plex] error: item "' + item.title + '" couldnt be removed from ' + user[0] + '`s watchlist')
                 if not self == []:
                     self.data.remove(item)
             else:
-                ui_print('[plex] item: "' + item.title + '" removed from ' + item.user[0] + '`s watchlist')
-                url = 'https://metadata.provider.plex.tv/actions/removeFromWatchlist?ratingKey=' + item.ratingKey + '&X-Plex-Token=' + \
-                        item.user[1]
-                response = session.put(url, data={'ratingKey': item.ratingKey})
+                url = 'https://metadata.provider.plex.tv/actions/removeFromWatchlist?ratingKey=' + item.ratingKey + '&X-Plex-Token=' + item.user[1]
+                try:
+                    response = session.put(url, data={'ratingKey': item.ratingKey})
+                    ui_print('[plex] item: "' + item.title + '" removed from ' + item.user[0] + '`s watchlist')
+                except:
+                    ui_print('[plex] error: item "' + item.title + '" couldnt be removed from ' + user[0] + '`s watchlist')
                 if not self == []:
                     self.data.remove(item)
 
@@ -152,6 +156,7 @@ class season(classes.media):
             for user in users:
                 if library.ignore.user == user[0]:
                     token = user[1]
+        viewCount = 0
         while len(self.Episodes) < self.leafCount:
             url = 'https://metadata.provider.plex.tv/library/metadata/' + self.ratingKey + '/children?includeUserState=1&X-Plex-Container-Size=200&X-Plex-Container-Start=' + str(
                 len(self.Episodes)) + '&X-Plex-Token=' + token
@@ -163,8 +168,12 @@ class season(classes.media):
                             episode_.grandparentYear = self.parentYear
                             episode_.grandparentEID = self.parentEID
                             episode_.parentEID = self.EID
+                            viewCount += 1 if hasattr(episode_, "viewCount") and episode_.viewCount > 0 else 0
+                            if hasattr(self,"user"):
+                                episode_.user = self.user
                             self.Episodes += [episode(episode_)]
                     self.leafCount = response.MediaContainer.totalSize
+                    self.viewedLeafCount = viewCount
             else:
                 time.sleep(1)
 
@@ -214,6 +223,8 @@ class show(classes.media):
                             for index, Season in enumerate(response.MediaContainer.Metadata):
                                 Season.parentYear = self.year
                                 Season.parentEID = self.EID
+                                if hasattr(self,"user"):
+                                    Season.user = self.user
                                 t = Thread(target=multi_init, args=(season, Season, results, index))
                                 threads.append(t)
                                 t.start()
@@ -221,6 +232,11 @@ class show(classes.media):
                             for t in threads:
                                 t.join()
                             self.Seasons = results
+                            self.leafCount = 0
+                            self.viewedLeafCount = 0
+                            for season_ in self.Seasons:
+                                self.leafCount += season_.leafCount
+                                self.viewedLeafCount += season_.viewedLeafCount
                     success = True
                 else:
                     time.sleep(1)

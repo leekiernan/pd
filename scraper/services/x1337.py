@@ -17,6 +17,7 @@ def scrape(query, altquery):
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36'}
         url = 'http://1337x.to/search/' + str(query) + '/1/'
+        response = None
         try:
             ui_debug(f'[1337x]: get {url}')
             response = session.get(url, headers=headers)
@@ -50,6 +51,10 @@ def scrape(query, altquery):
                             releases.release('[1337x]', 'torrent', title, [], size, [download], seeders=int(seeders))]
         except Exception as e:
             ui_debug(f'1337x exception {e}')
+            if hasattr(response,"status_code") and not str(response.status_code).startswith("2"):
+                ui_print('1337x error '+str(response.status_code)+': 1337x is temporarily not reachable')
+            else:
+                ui_print('1337x error: unknown error')
             response = None
-            ui_print('1337x error: exception')
+            ui_print('1337x error: exception: ' + str(e),ui_settings.debug)
     return scraped_releases

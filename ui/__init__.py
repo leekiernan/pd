@@ -340,12 +340,14 @@ def run(cdir = "", smode = False):
     service_mode = smode
     set_log_dir(config_dir)
     if setup():
+        #uvicorn.run("webui:app", port=8008, reload=True)
         options()
     else:
         load()
+        #uvicorn.run("webui:app", port=8008, reload=True)
         download_script_run()
         options()
-
+    
 def update(settings, version):
     ui_cls('/Update ' + version[0] + '/')
     print('There has been an update to plex_debrid, which is not compatible with your current settings:')

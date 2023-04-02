@@ -58,21 +58,27 @@ class watchlist(classes.watchlist):
         self.data = []
         try:
             for user in users:
-                url = 'https://metadata.provider.plex.tv/library/sections/watchlist/all?X-Plex-Token=' + user[1]
-                response = get(url)
-                if hasattr(response, 'MediaContainer'):
-                    if hasattr(response.MediaContainer, 'Metadata'):
-                        for entry in response.MediaContainer.Metadata:
-                            entry.user = [user]
-                            if not entry in self.data:
-                                if entry.type == 'show':
-                                    self.data += [show(entry)]
-                                if entry.type == 'movie':
-                                    self.data += [movie(entry)]
-                            else:
-                                element = next(x for x in self.data if x == entry)
-                                if not user in element.user:
-                                    element.user += [user]
+                added = 0
+                total = 1
+                while added < total:
+                    total = 0
+                    url = 'https://metadata.provider.plex.tv/library/sections/watchlist/all?X-Plex-Container-Size=200&X-Plex-Container-Start=' + str(added) + '&X-Plex-Token=' + user[1]
+                    response = get(url)
+                    if hasattr(response, 'MediaContainer'):
+                        total = response.MediaContainer.totalSize
+                        added += response.MediaContainer.size
+                        if hasattr(response.MediaContainer, 'Metadata'):
+                            for entry in response.MediaContainer.Metadata:
+                                entry.user = [user]
+                                if not entry in self.data:
+                                    if entry.type == 'show':
+                                        self.data += [show(entry)]
+                                    if entry.type == 'movie':
+                                        self.data += [movie(entry)]
+                                else:
+                                    element = next(x for x in self.data if x == entry)
+                                    if not user in element.user:
+                                        element.user += [user]
             self.data.sort(key=lambda s: s.watchlistedAt, reverse=True)
         except Exception as e:
             ui_print('done')
@@ -158,8 +164,7 @@ class season(classes.media):
                     token = user[1]
         viewCount = 0
         while len(self.Episodes) < self.leafCount:
-            url = 'https://metadata.provider.plex.tv/library/metadata/' + self.ratingKey + '/children?includeUserState=1&X-Plex-Container-Size=200&X-Plex-Container-Start=' + str(
-                len(self.Episodes)) + '&X-Plex-Token=' + token
+            url = 'https://metadata.provider.plex.tv/library/metadata/' + self.ratingKey + '/children?includeUserState=1&X-Plex-Container-Size=200&X-Plex-Container-Start=' + str(len(self.Episodes)) + '&X-Plex-Token=' + token
             response = get(url)
             if not response == None:
                 if hasattr(response, 'MediaContainer'):
@@ -478,7 +483,7 @@ class library(classes.library):
                         names += [section_.title]
                         folders = []
                         for location in section_.Location:
-                            if hasattr(element,"downloaded_releases") and library.refresh.partial == "true":
+                            if hasattr(element,"downloaded_releases") and len(element.downloaded_releases) > 0 and library.refresh.partial == "true":
                                 for release in element.downloaded_releases:
                                     folders += [requests.utils.quote(location.path + "/" + release)]
                             else:
@@ -633,75 +638,81 @@ class library(classes.library):
     def __new__(self):
         global current_library
         list_ = []
-        if not library.check == [['']] and not library.check == []:
-            ui_print(
-                '[plex] getting plex library section/s "' + ','.join(x[0] for x in library.check) + '" ...')
-            types = ['1', '2', '3', '4']
-            for section in library.check:
-                if section[0] == '':
-                    continue
-                section_response = []
-                for type in types:
-                    url = library.url + '/library/sections/' + section[
-                        0] + '/all?type=' + type + '&X-Plex-Token=' + users[0][1]
-                    response = get(url)
-                    if hasattr(response, 'MediaContainer'):
-                        if hasattr(response.MediaContainer, 'Metadata'):
-                            for element in response.MediaContainer.Metadata:
-                                section_response += [classes.media(element)]
-                if len(section_response) == 0:
-                    ui_print("[plex error]: couldnt reach local plex library section '" + section[
-                        0] + "' at server address: " + library.url + " - or this library really is empty.")
-                else:
-                    list_ += section_response
-        else:
-            ui_print('[plex] getting entire plex library ...')
-            url = library.url + '/library/all?X-Plex-Token=' + users[0][1]
-            response = get(url,timeout=60)
-            if hasattr(response, 'MediaContainer'):
-                if hasattr(response.MediaContainer, 'Metadata'):
-                    for element in response.MediaContainer.Metadata:
-                        list_ += [classes.media(element)]
+        sections = []
+        names = []
+        if library.check == [['']]:
+            library.check = []
+        try:
+            response = get(library.url  + '/library/sections/?X-Plex-Token=' + users[0][1])
+            for Directory in response.MediaContainer.Directory:
+                if ([Directory.key] in library.check or library.check == []) and Directory.type in ["movie","show"]:
+                    types = ['1'] if Directory.type == "movie" else  ['2', '3', '4']
+                    sections += [[Directory.key,types]]
+                    names += [Directory.title]
+        except:
+            ui_print("[plex error]: couldnt reach local plex server at: " + library.url + " to determine library sections. Make sure the address is correct, the server is running, and youve set up at least one library.")
+        if len(sections) == 0:
+            return list_
+        ui_print('[plex] getting plex library section/s "' + '","'.join(names) + '" ...')
+        for section,types in sections:
+            if section == '':
+                continue
+            section_response = []
+            for type in types:
+                url = library.url + '/library/sections/' + section + '/all?type=' + type + '&X-Plex-Token=' + users[0][1]
+                response = get(url)
+                if hasattr(response, 'MediaContainer'):
+                    if hasattr(response.MediaContainer, 'Metadata'):
+                        for element in response.MediaContainer.Metadata:
+                            section_response += [classes.media(element)]
+            if len(section_response) == 0:
+                ui_print("[plex error]: couldnt reach local plex library section '" + section + "' at server address: " + library.url + " - or this library really is empty.")
+                list_ = []
+                break
             else:
-                ui_print('done')
-                ui_print(
-                    "[plex error]: couldnt reach local plex server at server address: " + library.url + " - or this library really is empty.")
+                list_ += section_response
         if len(list_) == 0:
-            ui_print(
-                "[plex error]: Your library seems empty. To prevent unwanted behaviour, no further downloads will be started. If your library really is empty, please add at least one media item manually.")
-        for show in list_:
-            if show.type == "show":
-                show.childCount = 0
-                show.leafCount = 0
-                show.Seasons = []
-                for season in list_:
-                    if season.type == "season":
-                        if hasattr(season,"parentGuid"):
-                            if season.parentGuid == show.guid:
-                                show.childCount += 1
-                                season.Episodes = []
-                                season.leafCount = 0
-                                for episode in list_:
-                                    if episode.type == "episode":
-                                        if hasattr(episode,"parentGuid"):
-                                            if episode.parentGuid == season.guid:
-                                                show.leafCount += 1
-                                                season.leafCount += 1
-                                                season.Episodes += [episode]
-                                        elif hasattr(episode,'grandparentGuid') and hasattr(episode,'parentIndex') and hasattr(season,'index'):
-                                            if episode.grandparentGuid == season.parentGuid and episode.parentIndex == season.index:
-                                                episode.parentGuid = season.guid
-                                                show.leafCount += 1
-                                                season.leafCount += 1
-                                                season.Episodes += [episode]
-                                show.Seasons += [season]
-        for item in list_[:] :
-            if not item.type in ["show","movie"]:
-                list_.remove(item)
+            ui_print("[plex error]: Your library seems empty. To prevent unwanted behaviour, no further downloads will be started. If your library really is empty, please add at least one media item manually.")
+        shows = {}
+        seasons = {}
+        for item in list_:
+            if item.type == "show":
+                item.childCount = 0
+                item.leafCount = 0
+                item.Seasons = []
+                shows[item.guid] = item
+            elif item.type == "season":
+                item.leafCount = 0
+                item.Episodes = []
+                seasons[item.guid] = item
+        for episode in list_:
+            if episode.type != "episode" or not episode.parentGuid in seasons:
+                continue
+            season = seasons[episode.parentGuid]
+            if not season.parentGuid in shows:
+                continue
+            show = shows[season.parentGuid]
+            season_ = next((x for x in show.Seasons if season == x), None)
+            if season_ != None:
+                season_.Episodes.append(episode)
+                season_.leafCount += 1
+                show.leafCount += 1
+            else:
+                season.Episodes.append(episode)
+                season.leafCount += 1
+                show.childCount += 1
+                show.leafCount += 1
+                show.Seasons.append(season)
+        list_ = [item for item in list_ if item.type == "movie"]
+        for value in shows.values():
+            list_.append(value)
+        if len(list_) - len(current_library) > 0:
+            ui_print('done')
+            ui_print('[plex] getting metadata for ' + str(len(list_) - len(current_library)) + ' collected movies/shows ...')
         for item in list_:
             try:
                 if not item in current_library:
-                    url = library.url + '/library/metadata/'+item.ratingKey+'?X-Plex-Token=' + users[0][1]
+                    url = library.url + '/library/metadata/' + item.ratingKey + '?X-Plex-Token=' + users[0][1]
                     response = get(url)
                     item.__dict__.update(response.MediaContainer.Metadata[0].__dict__)
                 else:

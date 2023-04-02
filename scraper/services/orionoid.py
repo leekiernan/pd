@@ -14,7 +14,7 @@ session = requests.Session()
 def get(url):
     ui_debug(f'[orionoid]: get {url}')
     try:
-        response = session.get(url)
+        response = session.get(url,timeout=60)
         response = json.loads(response.content, object_hook=lambda d: SimpleNamespace(**d))
         return response
     except:
@@ -84,12 +84,13 @@ def scrape(query, altquery):
     for opt in default_opts:
         opts += ['='.join(opt)]
     opts = '&'.join(opts)
-    if type == "show" and not regex.search(r'(complete)',altquery,regex.I):
+    if type == "show":
         s = (regex.search(r'(?<=S)([0-9]+)',altquery,regex.I).group() if regex.search(r'(?<=S)([0-9]+)',altquery,regex.I) else None)
         e = (regex.search(r'(?<=E)([0-9]+)',altquery,regex.I).group() if regex.search(r'(?<=E)([0-9]+)',altquery,regex.I) else None)
-        if not s == None and not s == 0:
-            opts += '&numberseason=' + str(int(s))
-        if not e == None:
+        if s == None or int(s) == 0:
+            s = 1
+        opts += '&numberseason=' + str(int(s))
+        if not e == None and not int(e) == 0:
             opts += '&numberepisode=' + str(int(e))
     scraped_releases = []
     if regex.search(r'(tt[0-9]+)', altquery, regex.I):

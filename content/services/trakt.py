@@ -10,6 +10,7 @@ client_secret = "87109ed53fe1b4d6b0239e671f36cd2f17378384fa1ae09888a32643f83b7e6
 lists = []
 users = []
 current_user = ["", ""]
+current_library = []
 early_releases = "false"
 session = requests.Session()
 
@@ -610,6 +611,7 @@ class library(classes.library):
 
     def __new__(self):
         global current_user
+        global current_library
         current_user = library.user
         ui_print('[trakt] getting ' + current_user[0] + "'s" + ' entire trakt collection ...')
         watchlist_items = []
@@ -644,6 +646,7 @@ class library(classes.library):
                     element.movie.EID = setEID(element.movie)
                     collection.append(classes.media(element.movie))
             ui_print('done')
+            current_library = collection
             return collection
         except Exception as e:
             ui_print("[trakt] error: (exception): " + str(e), debug=ui_settings.debug)
@@ -1126,7 +1129,7 @@ def aliases(self,lan):
                         if alias.country in ctrs:
                             special_chars = False
                             for i in alias.title:
-                                if ord(i) > 128:
+                                if ord(i) > 512:
                                     special_chars = True
                                     break
                             if not special_chars:
@@ -1149,7 +1152,7 @@ def translations(self,lan):
                         for alias in response:
                             special_chars = False
                             for i in alias.title:
-                                if ord(i) > 128:
+                                if ord(i) > 512:
                                     special_chars = True
                                     break
                             if not special_chars:

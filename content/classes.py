@@ -182,6 +182,74 @@ class ignore:
                 check = True
         return check
 
+class map:
+
+    import xml.etree.ElementTree as ET
+
+    def element_to_dict(element):
+        result = {}
+        for key, value in element.items():
+            result[key] = value
+
+        if element.text and element.text.strip():
+            result[element.tag] = element.text.strip()
+
+        for child in element:
+            child_dict = map.element_to_dict(child)
+            if child.tag in result:
+                if isinstance(result[child.tag], list):
+                    result[child.tag].append(child_dict)
+                else:
+                    result[child.tag] = [result[child.tag], child_dict]
+            else:
+                result[child.tag] = child_dict
+
+        return result
+
+    def xml_to_dict(xml_string):
+        root = map.ET.fromstring(xml_string)
+        return {root.tag: map.element_to_dict(root)}
+
+    class anidb:
+
+        titles = {}
+        last_update = 0
+
+        def construct():
+            try:
+                response = requests.get("https://raw.githubusercontent.com/Anime-Lists/anime-lists/master/anime-list.xml",timeout=60)
+                ids = map.xml_to_dict(response.content.decode('utf-8'))
+                response = requests.get("https://raw.githubusercontent.com/Anime-Lists/anime-lists/master/animetitles.xml",timeout=60)
+                titles = map.xml_to_dict(response.content.decode('utf-8'))
+            except Exception as e:
+                ui_print("Failed to get anime mapping lists: " + str(e),ui_settings.debug)
+                return
+            map.anidb.titles = {}
+            temp = {}
+            for match in titles['animetitles']['anime']:
+                temp[match['aid']] = match
+            for element in ids['anime-list']['anime']:
+                aliases = []
+                match = temp[element['anidbid']]
+                if match == None:
+                    continue
+                if not isinstance(match['title'],list):
+                    match['title'] = [match['title']]
+                for title in match['title']:
+                    if title['type'] in ['main','official','short'] and not title['title'].split(":")[0] in aliases:
+                        aliases += [title['title'].split(":")[0]]
+                if 'imdbid' in element:
+                    map.anidb.titles['imdb://' + str(element['imdbid'])] = aliases
+                if 'tvdbid' in element and not element['tvdbid'] == "movie":
+                    map.anidb.titles['tvdb://' + str(element['tvdbid'])] = aliases
+        def __new__(cls,self) -> list:
+            if time.time() - map.anidb.last_update > 3600:
+                map.anidb.construct()
+                map.anidb.last_update = time.time()
+            for EID in self.EID:
+                if EID in map.anidb.titles:
+                    return map.anidb.titles[EID]
+
 class media:
 
     ignore_queue = []
@@ -221,9 +289,6 @@ class media:
                 return self.grandparentGuid == other.grandparentGuid and self.parentIndex == other.parentIndex and self.index == other.index
         except:
             return False
-
-    def __repr__(self):
-        return str(self.__dict__)
 
     def match(self,service):
         if not hasattr(self,"services"):
@@ -325,8 +390,11 @@ class media:
             elif self.type == 'episode':
                 title = releases.rename(self.grandparentTitle)
         if self.type == 'movie':
-            title = title.replace('.' + str(self.year), '')
-            return title + '.' + str(self.year)
+            if regex.search(str(self.year),releases.rename(self.title.replace(str(self.year),'') + ' ' + str(self.year))):
+                title = title.replace('.' + str(self.year), '')
+                return title + '.' + str(self.year)
+            else:
+                return title
         elif self.type == 'show':
             title = title.replace('.' + str(self.year), '')
             return title
@@ -384,7 +452,18 @@ class media:
                 aliases.insert(0,self.title)
             elif not releases.rename(self.title) in self.alternate_titles:
                 aliases += [self.title]
+            if self.isanime():
+                anidbtitles = map.anidb(self)
+                if not aliases == None and not anidbtitles == None:
+                    aliases = anidbtitles + aliases
+            aliases = list(dict.fromkeys(aliases))
             for title in aliases:
+                special_char = False
+                for i in title:
+                    if ord(i) > 512:
+                        special_char = True
+                if special_char:
+                    continue
                 if title == None or title == []:
                     continue
                 if "." in title:
@@ -466,10 +545,14 @@ class media:
                     title = releases.rename(self.grandparentTitle)
             title = title.replace('[','\[').replace(']','\]')
             if self.type == 'movie':
-                title = title.replace('.' + str(self.year), '')
-                if year != "":
-                    return '[^A-Za-z0-9]*(' + title + ':?.)\(?\[?(' + str(year) + ')'
-                return '[^A-Za-z0-9]*(' + title + ':?.)\(?\[?(' + str(self.year) + '|' + str(self.year - 1) + '|' + str(self.year + 1) + ')'
+                if regex.search(str(self.year),releases.rename(self.title.replace(str(self.year),'') + ' ' + str(self.year))):
+                    title = title.replace('.' + str(self.year), '')
+                    if year != "":
+                        return '[^A-Za-z0-9]*(' + title + ':?.)\(?\[?(' + str(year) + ')'
+                    return '[^A-Za-z0-9]*(' + title + ':?.)\(?\[?(' + str(self.year) + '|' + str(self.year - 1) + '|' + str(self.year + 1) + ')'
+                else:
+                    title = title.replace('.' + str(self.year), '')
+                    return '[^A-Za-z0-9]*(' + title + ')'
             elif self.type == 'show':
                 title = title.replace('.' + str(self.year), '')
                 return '[^A-Za-z0-9]*(' + title + ':?.)(series.)?((\(?' + str(self.year) + '\)?.)|(complete.)|(seasons?.[0-9]+.[0-9]?[0-9]?.?)|(S[0-9]+.S?[0-9]?[0-9]?.?)|(S[0-9]+E[0-9]+))'
@@ -506,17 +589,23 @@ class media:
                 return '(.*?)(' + title + '.)(.*?)(' + str(self.year) + '|' + str(self.year - 1) + '|' + str(self.year + 1) + ')'
             elif self.type == 'show':
                 title = title.replace('.' + str(self.year), '')
-                return '(.*?)(' + title + '.)(.*?)('+self.anime_count+'|(complete)|(seasons?.[0-9]+.[0-9]+)|(S[0-9]+[^E]S?[0-9]+))'
+                return '(.*?)(' + title + '.)(.*?)('+self.anime_count+'|(complete)|(seasons?[^0-9]?[0-9]+[^A-Z0-9]+S?[0-9]+)|(S[0-9]+[^A-Z0-9]+S?[0-9]+))'
             elif self.type == 'season':
+                n = self.index
+                roman = 'I' if n == 1 else 'II' if n==2 else 'III' if n==3 else 'IV' if n==4 else 'V' if n==5 else 'VI' if n==6 else 'VII' if n==7 else 'VIII' if n==8 else 'IX' if n==9 else 'X' if n==10 else str(n)
                 title = title.replace('.' + str(self.parentYear), '')
-                return '(.*?)(' + title + '.)(.*?)(season.0*' + str(self.index) + '|S0*' + str(self.index) + '(?!E?[0-9])|'+self.anime_count+')'
+                return '(.*?)(' + title + '.)(.*?)(season[^0-9]?0*' + str(self.index) + '|S0*' + str(self.index) + '(?!E?[0-9])|'+self.anime_count+'|[^A-Z0-9]'+roman+'[^A-Z0-9])'
             elif self.type == 'episode':
+                n = self.parentIndex
+                roman = 'I' if n == 1 else 'II' if n==2 else 'III' if n==3 else 'IV' if n==4 else 'V' if n==5 else 'VI' if n==6 else 'VII' if n==7 else 'VIII' if n==8 else 'IX' if n==9 else 'X' if n==10 else str(n)
                 title = title.replace('.' + str(self.grandparentYear), '')
-                return '(.*?)(' + title + '.)([^1-9]*?)(S' + str("{:02d}".format(self.parentIndex)) + '.?E' + str("{:02d}".format(self.index)) + '|'+self.anime_count+'(?!E?[0-9]))'
+                return '(.*?)(' + title + '.)(.*?)((?<!part)[^0-9A-RT-Z\[]0*('+str(self.parentIndex)+'|'+roman+')[^0-9A-DF-Z\[]0*'+str(self.index)+'(?![A-Z0-9]|\])|(?<!part)[^0-9A-Z\[]0*'+self.anime_count+'(?![A-Z0-9]|\]))'
 
     def isanime(self):
         if 'anime' in self.genre():
             if self.type == "show":
+                if hasattr(self,"anime_count"):
+                    return True
                 self.anime_count = 0
                 if hasattr(self,'Seasons'):
                     for season in self.Seasons:
@@ -527,9 +616,9 @@ class media:
                                 self.anime_count += 1
                                 episode.genres = ['anime']
                                 episode.anime_count = str(self.anime_count)
-                        season.anime_count = '-0*(' + str(self.anime_count) + '|' + str(self.anime_count+1) + ')'
+                        season.anime_count = '[0-9][^0-9]?-[^0-9]?0*(' + str(self.anime_count) + '|' + str(self.anime_count+1) + ')'
                         season.anime_season = season.anime_season + '-' + str(self.anime_count)
-                self.anime_count = '-0*(' + str(self.anime_count) + '|' + str(self.anime_count+1) + ')'
+                self.anime_count = '[0-9][^0-9]?-[^0-9]?0*(' + str(self.anime_count) + '|' + str(self.anime_count+1) + ')'
             return True
         return False
 
@@ -557,10 +646,43 @@ class media:
                 episode.grandparentGenre = genres
         return genres
 
-    def versions(self):
+    def versions(self,quick=False):
+        #initialize downloaded and existing releases
+        if not hasattr(self,"existing_releases"):
+            self.existing_releases = []
+        if not hasattr(self,"downloaded_releases"):
+            self.downloaded_releases = []
+        if self.type == "show":
+            for season in self.Seasons:
+                if not hasattr(season,"existing_releases"):
+                    season.existing_releases = []
+                if not hasattr(season,"downloaded_releases"):
+                    season.downloaded_releases = []
+                for episode in season.Episodes:
+                    if not hasattr(episode,"existing_releases"):
+                        episode.existing_releases = []
+                    if not hasattr(episode,"downloaded_releases"):
+                        episode.downloaded_releases = []
+        if self.type == "season":
+            for episode in self.Episodes:
+                if not hasattr(episode,"existing_releases"):
+                    episode.existing_releases = []
+                if not hasattr(episode,"downloaded_releases"):
+                    episode.downloaded_releases = []
+        #get all versions
         versions = []
         for version in releases.sort.versions:
             versions += [releases.sort.version(version[0], version[1], version[2], version[3])]
+        #update media items ignore count
+        if self in media.ignore_queue:
+            match = next((x for x in media.ignore_queue if self == x), None)
+            self.ignored_count = match.ignored_count
+        #remove versions that dont apply
+        for version in versions[:]:
+            if not version.applies(self):
+                versions.remove(version)
+        #remove versions that have been downloaded in this session:
+        all_versions = copy.deepcopy(versions)
         for version in versions[:]:
             missing = False
             if self.type == "movie" or self.type == "episode":
@@ -583,12 +705,82 @@ class media:
                         break
                 if not missing:
                     versions.remove(version)
-        if self in media.ignore_queue:
-            match = next((x for x in media.ignore_queue if self == x), None)
-            self.ignored_count = match.ignored_count
-        for version in versions[:]:
-            if not version.applies(self):
-                versions.remove(version)
+        if quick:
+            return versions
+        #If Trakt is the  collection service, the upgrading of collected content is not possible, since no record of the downloaded file names is kept. return the missing versions from this session.
+        if library()[0].name != 'Plex Library':
+            return versions
+        #If Plex is the collection service, check if all versions are missing in this session. If not all versions are missing, at least one can still be downloaded normally and no upgrades should be made.
+        if versions != all_versions:
+            return versions
+        #Check if there are any missing versions with upgrade rules for this media item, if not, return all versions.
+        upgrade_versions = []
+        for version in versions:
+            for rule in version.rules:
+                if rule[1] == "upgrade":
+                    if not self.query() + ' [' + version.name + " upgrade]" in media.downloaded_versions:
+                        upgrade_versions += [version]
+                        break
+        if len(upgrade_versions) == 0:
+            return versions
+        #Check if the content is completely collected:
+        from content.services.plex import current_library
+        if not self.complete(current_library):
+            return versions
+        #If the collection service is Plex, all versions are missing, there are upgradable versions and content is completely collected, look for upgrades:
+        versions = []
+        for version in upgrade_versions:
+            added = False
+            self.set_file_names()
+            if self.type == "movie" or self.type == "episode":
+                if not self.query() + ' [' + version.name + " upgrade]" in media.downloaded_versions:
+                    for rule in version.rules:
+                        if not rule[1] == "upgrade":
+                            continue
+                        if releases.sort.version.rule(rule[0],rule[1],rule[2],rule[3]).upgrade(self.existing_releases):
+                            upgrade_rules = copy.deepcopy(version.rules)
+                            for i,rule_ in enumerate(version.rules):
+                                if rule_[1] == "upgrade":
+                                    upgrade_rules[i][1] = "requirement"
+                            versions += [releases.sort.version(version.name + " upgrade",version.triggers,version.lang,upgrade_rules)]
+                            break
+            elif self.type == 'show':
+                for season in self.Seasons:
+                    for episode in season.Episodes:
+                        if not episode.query() + ' [' + version.name + " upgrade]" in media.downloaded_versions:
+                            for rule in version.rules:
+                                if not rule[1] == "upgrade":
+                                    continue
+                                if releases.sort.version.rule(rule[0],rule[1],rule[2],rule[3]).upgrade(episode.existing_releases):
+                                    upgrade_rules = copy.deepcopy(version.rules)
+                                    for i,rule_ in enumerate(version.rules):
+                                        if rule_[1] == "upgrade":
+                                            upgrade_rules[i][1] = "requirement"
+                                    versions += [releases.sort.version(version.name + " upgrade",version.triggers,version.lang,upgrade_rules)]
+                                    added = True
+                                    break
+                            if added:
+                                break
+                    if added:
+                        break
+            elif self.type == "season":
+                for episode in self.Episodes:
+                    if not episode.query() + ' [' + version.name + " upgrade]" in media.downloaded_versions:
+                        for rule in version.rules:
+                            if not rule[1] == "upgrade":
+                                continue
+                            if releases.sort.version.rule(rule[0],rule[1],rule[2],rule[3]).upgrade(episode.existing_releases):
+                                upgrade_rules = copy.deepcopy(version.rules)
+                                for i,rule_ in enumerate(version.rules):
+                                    if rule_[1] == "upgrade":
+                                        upgrade_rules[i][1] = "requirement"
+                                versions += [releases.sort.version(version.name + " upgrade",version.triggers,version.lang,upgrade_rules)]
+                                added = True
+                                break
+                        if added:
+                            break
+        if len(versions) > 0:
+            versions
         return versions
 
     def version_missing(self):
@@ -601,9 +793,83 @@ class media:
         for version in all_versions[:]:
             if not version.applies(self):
                 all_versions.remove(version)
-        return (len(self.versions()) > 0) and not (len(self.versions()) == len(all_versions))
+        return len(self.versions()) > 0 and not self.versions() == all_versions
+
+    def set_file_names(self):
+        if not library()[0].name == 'Plex Library' or hasattr(self,"upgradable"):
+            return
+        import content.services.plex as plex
+        self.upgradable = True
+        if self.type == "show":
+            for season in self.Seasons:
+                season.upgradable = True
+                for episode in season.Episodes:
+                    episode.set_file_names()
+        if self.type == "season":
+            for episode in self.Episodes:
+                episode.set_file_names()
+        if self.type in ["episode","movie"]:
+            for element in plex.current_library:
+                if self.type == "movie":
+                    if self == element:
+                        try:
+                            for Media in element.Media:
+                                res = "2160" if Media.videoResolution == "4k" else Media.videoResolution
+                                for Part in Media.Part:
+                                    self.existing_releases += ["(" + res + "p) " + Part.file]
+                            return
+                        except Exception as e:
+                            ui_print("error: (file name exception): " + self.query() + " " + str(e),ui_settings.debug)
+                            return
+                elif self.type == "episode":
+                    if element.type == "show":
+                        if any(eid in self.grandparentEID for eid in element.EID):
+                            for season in element.Seasons:
+                                if self.parentIndex == season.index:
+                                    for episode in season.Episodes:
+                                        if self == episode:
+                                            try:
+                                                for Media in episode.Media:
+                                                    res = "2160" if Media.videoResolution == "4k" else Media.videoResolution
+                                                    for Part in Media.Part:
+                                                        self.existing_releases += ["(" + res + "p) " + Part.file]
+                                                return
+                                            except Exception as e:
+                                                ui_print("error: (file name exception): " + self.query() + " " + str(e),ui_settings.debug)
+                                                return
+
+    def complete(self, list):
+        if self.type in ['movie','episode']:
+            if self.collected(list) or self.watched() or not self.released() or self.downloading():
+                return True
+        elif self.type == 'show':
+            if self.collected(list):
+                return True
+            Seasons = copy.deepcopy(self.Seasons)
+            for season in Seasons[:]:
+                if not season.collected(list) and not season.watched() and season.released() and not season.downloading():
+                    for episode in season.Episodes[:]:
+                        if episode.collected(list) or episode.watched() or not episode.released() or episode.downloading():
+                            season.Episodes.remove(episode)
+                else:
+                    if season in Seasons:
+                        Seasons.remove(season)
+                if len(season.Episodes) == 0 and season in Seasons:
+                    Seasons.remove(season)
+            return len(Seasons) == 0
+        elif self.type == "season":
+            if self.collected(list):
+                return True
+            Episodes = copy.deepcopy(self.Episodes)
+            for episode in Episodes[:]:
+                if episode.collected(list) or episode.watched() or not episode.released() or episode.downloading():
+                    Episodes.remove(episode)
+            return len(Episodes) == 0
+        return False
 
     def watch(self):
+        global imdb_scraped
+        imdb_scraped = False
         names = []
         retries = 0
         for version in self.versions():
@@ -636,12 +902,14 @@ class media:
     def released(self):
         try:
             released = datetime.datetime.utcnow() - datetime.datetime.strptime(self.originallyAvailableAt,'%Y-%m-%d')
-            for version in self.versions():
-                for i,trigger in enumerate(version.triggers):
-                    if trigger[0] == "airtime offset":
-                        released = datetime.datetime.utcnow() - datetime.datetime.strptime(self.originallyAvailableAt,'%Y-%m-%d') - datetime.timedelta(hours=float(trigger[2]))
+            if hasattr(self,"offset_airtime"):
+                smallest_offset = 0
+                for offset in self.offset_airtime:
+                    if float(offset) < smallest_offset or smallest_offset == 0:
+                        smallest_offset = float(offset)
+                released = datetime.datetime.utcnow() - datetime.datetime.strptime(self.originallyAvailableAt,'%Y-%m-%d') - datetime.timedelta(hours=float(smallest_offset))
             if self.type == 'movie':
-                if released.days >= -30 and released.days <= 60:
+                if released.days >= -30 and released.days <= 180:
                     return self.available()
                 return released.days > 0
             else:
@@ -659,68 +927,83 @@ class media:
         if (self.watchlist == plex.watchlist and len(trakt.users) > 0) or self.watchlist == trakt.watchlist:
             if self.watchlist == plex.watchlist:
                 self.match('content.services.trakt')
-            offset = "0"
-            for version in self.versions():
-                for i,trigger in enumerate(version.triggers):
-                    if trigger[0] == "airtime offset":
-                        offset = trigger[2]
-            released = datetime.datetime.utcnow() - datetime.datetime.strptime(self.originallyAvailableAt,'%Y-%m-%d') - datetime.timedelta(hours=float(offset))
-            trakt_match = self
-            if not trakt_match == None:
-                trakt.current_user = trakt.users[0]
-                try:
-                    if trakt_match.type == 'show':
-                        return datetime.datetime.utcnow() > datetime.datetime.strptime(trakt_match.first_aired,'%Y-%m-%dT%H:%M:%S.000Z') + datetime.timedelta(hours=float(offset))
-                    elif trakt_match.type == 'movie':
-                        release_date = None
-                        releases, header = trakt.get(
-                            'https://api.trakt.tv/movies/' + str(trakt_match.ids.trakt) + '/releases/')
+            trakt.current_user = trakt.users[0]
+            try:
+                if self.type == 'show':
+                    if hasattr(self,"offset_airtime"):
+                        for offset in self.offset_airtime:
+                            if datetime.datetime.utcnow() > self.offset_airtime[offset]:
+                                return True
+                        return False
+                    return datetime.datetime.utcnow() > datetime.datetime.strptime(self.first_aired,'%Y-%m-%dT%H:%M:%S.000Z')
+                elif self.type == 'movie':
+                    release_date = None
+                    releases, header = trakt.get(
+                        'https://api.trakt.tv/movies/' + str(self.ids.trakt) + '/releases/')
+                    for release in releases:
+                        if release.release_type == 'digital' or release.release_type == 'physical' or release.release_type == 'tv':
+                            if release_date == None:
+                                release_date = release.release_date
+                            elif datetime.datetime.strptime(release_date,'%Y-%m-%d') > datetime.datetime.strptime(release.release_date, '%Y-%m-%d'):
+                                release_date = release.release_date
+                    # If no release date was found, select the theatrical release date + 2 Month delay
+                    if release_date == None:
                         for release in releases:
-                            if release.release_type == 'digital' or release.release_type == 'physical' or release.release_type == 'tv':
-                                if release_date == None:
-                                    release_date = release.release_date
-                                elif datetime.datetime.strptime(release_date,'%Y-%m-%d') > datetime.datetime.strptime(release.release_date, '%Y-%m-%d'):
-                                    release_date = release.release_date
-                        # If no release date was found, select the theatrical release date + 2 Month delay
-                        if release_date == None:
-                            for release in releases:
-                                if release_date == None:
-                                    release_date = release.release_date
-                                elif datetime.datetime.strptime(release_date,'%Y-%m-%d') > datetime.datetime.strptime(release.release_date, '%Y-%m-%d'):
-                                    release_date = release.release_date
-                            release_date = datetime.datetime.strptime(release_date,'%Y-%m-%d') + datetime.timedelta(days=60)
-                            release_date = release_date.strftime("%Y-%m-%d")
-                        # Get trakt 'Latest HD/4k Releases' Lists to accept early releases
-                        match = False
-                        if trakt.early_releases == "true":
-                            trakt_lists, header = trakt.get(
-                                'https://api.trakt.tv/movies/' + str(trakt_match.ids.trakt) + '/lists/personal/popular')
-                            for trakt_list in trakt_lists:
-                                if regex.search(r'(latest|new).*?(releases)', trakt_list.name, regex.I):
-                                    match = True
-                        # if release_date and delay have passed or the movie was released early
-                        try:
+                            if release_date == None:
+                                release_date = release.release_date
+                            elif datetime.datetime.strptime(release_date,'%Y-%m-%d') > datetime.datetime.strptime(release.release_date, '%Y-%m-%d'):
+                                release_date = release.release_date
+                        release_date = datetime.datetime.strptime(release_date,'%Y-%m-%d') + datetime.timedelta(days=60)
+                        release_date = release_date.strftime("%Y-%m-%d")
+                    # Get trakt 'Latest HD/4k Releases' Lists to accept early releases
+                    match = False
+                    if trakt.early_releases == "true":
+                        trakt_lists, header = trakt.get(
+                            'https://api.trakt.tv/movies/' + str(self.ids.trakt) + '/lists/personal/popular')
+                        for trakt_list in trakt_lists:
+                            if regex.search(r'(latest|new).*?(releases)', trakt_list.name, regex.I):
+                                match = True
+                    # if release_date and delay have passed or the movie was released early
+                    if match:
+                        ui_print("item: '" + self.query() + "' seems to be released prior to its official release date and will be downloaded.")
+                        return True
+                    if hasattr(self,"offset_airtime"):
+                        for offset in self.offset_airtime:
+                            if datetime.datetime.utcnow() > (datetime.datetime.strptime(release_date,'%Y-%m-%d') + datetime.timedelta(hours=float(offset))):
+                                return True
                             available = datetime.datetime.strptime(release_date,'%Y-%m-%d') + datetime.timedelta(hours=float(offset)) - datetime.datetime.utcnow()
-                            if match:
-                                ui_print("item: '" + trakt_match.query() + "' seems to be released prior to its official release date and will be downloaded.")
-                            elif available.days >= 0 and available.seconds > 0:
-                                ui_print("item: '" + trakt_match.query() + "' is available in: " + "{:02d}d:{:02d}h:{:02d}m:{:02d}s".format(available.days, available.seconds // 3600, (available.seconds % 3600) // 60, available.seconds % 60) + (" (including offset of: " + offset + "h)" if offset != "0" else ""))
-                            return datetime.datetime.utcnow() > datetime.datetime.strptime(release_date,'%Y-%m-%d') + datetime.timedelta(hours=float(offset)) or match
-                        except:
-                            return datetime.datetime.utcnow() > datetime.datetime.strptime(release_date,'%Y-%m-%d') + datetime.timedelta(hours=float(offset)) or match
-                    elif trakt_match.type == 'season':
-                        try:
-                            return datetime.datetime.utcnow() > datetime.datetime.strptime(trakt_match.first_aired,'%Y-%m-%dT%H:%M:%S.000Z') + datetime.timedelta(hours=float(offset))
-                        except:
-                            return True
-                    elif trakt_match.type == 'episode':
-                        available = datetime.datetime.strptime(trakt_match.first_aired,'%Y-%m-%dT%H:%M:%S.000Z') + datetime.timedelta(hours=float(offset)) - datetime.datetime.utcnow()
-                        if available.days >= 0 and available.seconds > 0:
-                            ui_print("item: '" + trakt_match.query() + "' is available in: " + "{:02d}d:{:02d}h:{:02d}m:{:02d}s".format(available.days, available.seconds // 3600, (available.seconds % 3600) // 60, available.seconds % 60) + (" (including offset of: " + offset + "h)" if offset != "0" else ""))
-                        return datetime.datetime.utcnow() > datetime.datetime.strptime(trakt_match.first_aired,'%Y-%m-%dT%H:%M:%S.000Z') + datetime.timedelta(hours=float(offset))
-                except Exception as e:
-                    ui_print("media error: (availability exception): " + str(e), debug=ui_settings.debug)
+                            ui_print("item: '" + self.query() + "' is available in: " + "{:02d}d:{:02d}h:{:02d}m:{:02d}s".format(available.days, available.seconds // 3600, (available.seconds % 3600) // 60, available.seconds % 60) + (" (including offset of: " + offset + "h)" if offset != "0" else ""))
+                        return False
+                    available = datetime.datetime.strptime(release_date,'%Y-%m-%d') - datetime.datetime.utcnow()
+                    if not datetime.datetime.utcnow() > datetime.datetime.strptime(release_date,'%Y-%m-%d'):
+                        ui_print("item: '" + self.query() + "' is available in: " + "{:02d}d:{:02d}h:{:02d}m:{:02d}s".format(available.days, available.seconds // 3600, (available.seconds % 3600) // 60, available.seconds % 60))
+                    return datetime.datetime.utcnow() > datetime.datetime.strptime(release_date,'%Y-%m-%d')
+                elif self.type == 'season':
+                    try:
+                        if hasattr(self,"offset_airtime") and len(self.offset_airtime) > 0:
+                            for offset in self.offset_airtime:
+                                if datetime.datetime.utcnow() > datetime.datetime.strptime(self.first_aired,'%Y-%m-%dT%H:%M:%S.000Z') + datetime.timedelta(hours=float(offset)):
+                                    return True
+                            return False
+                        return datetime.datetime.utcnow() > datetime.datetime.strptime(self.first_aired,'%Y-%m-%dT%H:%M:%S.000Z')
+                    except:
+                        return True
+                elif self.type == 'episode':
+                    if hasattr(self,"offset_airtime"):
+                        for offset in self.offset_airtime:
+                            if datetime.datetime.utcnow() > datetime.datetime.strptime(self.first_aired,'%Y-%m-%dT%H:%M:%S.000Z') + datetime.timedelta(hours=float(offset)):
+                                return True
+                            available = datetime.datetime.strptime(self.first_aired,'%Y-%m-%dT%H:%M:%S.000Z') + datetime.timedelta(hours=float(offset)) - datetime.datetime.utcnow()
+                            ui_print("item: '" + self.query() + "' is available in: " + "{:02d}d:{:02d}h:{:02d}m:{:02d}s".format(available.days, available.seconds // 3600, (available.seconds % 3600) // 60, available.seconds % 60) + (" (including offset of: " + offset + "h)" if offset != "0" else ""))
+                        return False
+                    if datetime.datetime.utcnow() > datetime.datetime.strptime(self.first_aired,'%Y-%m-%dT%H:%M:%S.000Z'):
+                        return True
+                    available = datetime.datetime.strptime(self.first_aired,'%Y-%m-%dT%H:%M:%S.000Z') - datetime.datetime.utcnow()
+                    ui_print("item: '" + self.query() + "' is available in: " + "{:02d}d:{:02d}h:{:02d}m:{:02d}s".format(available.days, available.seconds // 3600, (available.seconds % 3600) // 60, available.seconds % 60))
                     return False
+            except Exception as e:
+                ui_print("media error: (availability exception): " + str(e), debug=ui_settings.debug)
+                return False
         try:
             released = datetime.datetime.utcnow() - datetime.datetime.strptime(self.originallyAvailableAt,'%Y-%m-%d')
             if released.days < 0:
@@ -801,18 +1084,21 @@ class media:
         else:
             return False
 
+    def hasended(self):
+        if hasattr(self,"status"):
+            if self.status == "ended":
+                return True
+        if hasattr(self,"isContinuingSeries"):
+            return not self.isContinuingSeries
+        return False
+
     def download(self, retries=0, library=[], parentReleases=[]):
-        import content.services.plex as plex
-        import content.services.trakt as trakt
-        import content.services.overseerr as overseerr
-        current_module = sys.modules[__name__]
         global imdb_scraped
         refresh_ = False
         i = 0
         self.Releases = []
         if self.type in ["movie","show"] and ((not hasattr(self,"title") or self.title == "" or self.title == None) or (not hasattr(self,"year") or self.year == None or self.year == "")):
             ui_print("error: media item has no title or release year. This unknown movie/show might not be released yet.")
-            ui_print("If you have not connected a trakt account to plex_debrid, its recommended to do so as it will help plex_debrid find more accurate metadata.")
             return
         scraper.services.overwrite = []
         EIDS = []
@@ -822,10 +1108,12 @@ class media:
         if hasattr(self,"parentEID"):
             EIDS = self.parentEID
         if hasattr(self,"grandparentEID"):
-            EIDS = self.parentEID
+            EIDS = self.grandparentEID
         for EID in EIDS:
             if EID.startswith("imdb"):
                 service,imdbID = EID.split('://')
+        #set anime info before episodes are removed
+        self.isanime()
         if self.type == 'movie':
             if (len(self.uncollected(library)) > 0 or self.version_missing()) and len(self.versions()) > 0:
                 if self.released() and not self.watched() and not self.downloading():
@@ -865,7 +1153,7 @@ class media:
                     if retry:
                         self.watch()
         elif self.type == 'show':
-            if self.released() and (not self.collected(library) or self.version_missing()) and not self.watched() and len(self.versions()) > 0:
+            if len(self.versions()) > 0 and self.released() and (not self.collected(library) or self.version_missing()) and not self.watched():
                 self.isanime()
                 self.Seasons = self.uncollected(library)
                 # if there are uncollected episodes
@@ -882,9 +1170,9 @@ class media:
                     if len(self.Seasons) > 1:
                         if self.isanime():
                             for k,title in enumerate(self.alternate_titles[:3]):
-                                self.Releases += scraper.scrape(self.anime_query(title), self.deviation() + "("+imdbID+")?")
+                                self.Releases += scraper.scrape(self.anime_query(title), self.deviation() + "("+imdbID+")?(nyaa"+"|".join(self.alternate_titles)+")?")
                                 if len(self.Releases) < 20 and k == 0 and not imdb_scraped and not imdbID == ".":
-                                    self.Releases += scraper.scrape(imdbID,"(.*|S00|"+imdbID+")")
+                                    self.Releases += scraper.scrape(imdbID,"(.*|S00|"+imdbID+"|nyaa"+"|".join(self.alternate_titles)+")")
                                     imdb_scraped = True
                                 if len(self.Releases) > 0:
                                     break
@@ -988,67 +1276,93 @@ class media:
                             refresh_ = True
                         if result[1]:
                             retry = True
-                    if not retry and (self.watchlist.autoremove == "both" or self.watchlist.autoremove == "show"):
+                    if not retry and (self.watchlist.autoremove == "both" or self.watchlist.autoremove == "show" or self.hasended()):
                         self.watchlist.remove([], self)
                     toc = time.perf_counter()
                     ui_print('took ' + str(round(toc - tic, 2)) + 's')
         elif self.type == 'season':
+            debrid_downloaded = False
             for release in parentReleases:
                 if regex.match(self.deviation(), release.title, regex.I):
                     self.Releases += [release]
+            # Set the episodes parent releases to be the seasons parent releases:
+            scraped_releases = copy.deepcopy(parentReleases)
+            # If there is more than one episode
             if len(self.Episodes) > 1:
                 debrid_downloaded, retry = self.debrid_download()
-                if debrid_downloaded:
-                    return True, retry
-                else:
-                    for episode in self.Episodes:
-                        episode.skip_scraping = True
-                    self.Releases = []
-                if self.isanime():
-                    for k,title in enumerate(self.alternate_titles[:3]):
-                        self.Releases += scraper.scrape(self.anime_query(title), "(.*|S"+str("{:02d}".format(self.index))+"|"+imdbID+")")
-                        if len(self.Releases) < 20 and k == 0 and not imdb_scraped and not imdbID == ".":
-                            self.Releases += scraper.scrape(imdbID,"(.*|S"+str("{:02d}".format(self.index))+"|"+imdbID+")")
-                            imdb_scraped = True
-                        if len(self.Releases) > 0:
-                            break
-                if len(self.Releases) == 0:
-                    for k,title in enumerate(self.alternate_titles[:3]):
-                        self.Releases += scraper.scrape(self.query(title)[:-1], "(.*|S"+str("{:02d}".format(self.index))+"|"+imdbID+")")
-                        if len(self.Releases) < 20 and k == 0 and not imdb_scraped and not imdbID == ".":
-                            self.Releases += scraper.scrape(imdbID,"(.*|S"+str("{:02d}".format(self.index))+"|"+imdbID+")")
-                            imdb_scraped = True
-                        if len(self.Releases) > 0:
-                            break
-                    i += 1
-            scraped_releases = copy.deepcopy(self.Releases)
-            for release in self.Releases[:]:
-                if not regex.match(self.deviation(),release.title,regex.I):
-                    self.Releases.remove(release)
-            debrid_downloaded, retry = self.debrid_download()
-            if not debrid_downloaded or retry:
-                if debrid_downloaded:
-                    refresh_ = True
+                #If there is more than one episode missing, skip scraping for individual episodes
                 for episode in self.Episodes:
-                    downloaded, retry = episode.download(library=library, parentReleases=scraped_releases)
+                    episode.skip_scraping = True
+                #If there was nothing downloaded, scrape specifically for this season
+                if not debrid_downloaded:
+                    self.Releases = []
+                    if self.isanime():
+                        for k,title in enumerate(self.alternate_titles[:3]):
+                            self.Releases += scraper.scrape(self.anime_query(title), "(.*|S"+str("{:02d}".format(self.index))+"|"+imdbID+"|nyaa"+"|".join(self.alternate_titles)+")")
+                            if len(self.Releases) < 20 and k == 0 and not imdb_scraped and not imdbID == ".":
+                                self.Releases += scraper.scrape(imdbID,"(.*|S"+str("{:02d}".format(self.index))+"|"+imdbID+"|nyaa"+"|".join(self.alternate_titles)+")")
+                                imdb_scraped = True
+                            if len(self.Releases) > 0:
+                                break
+                    if len(self.Releases) == 0:
+                        for k,title in enumerate(self.alternate_titles[:3]):
+                            self.Releases += scraper.scrape(self.query(title)[:-1], "(.*|S"+str("{:02d}".format(self.index))+"|"+imdbID+")")
+                            if len(self.Releases) < 20 and k == 0 and not imdb_scraped and not imdbID == ".":
+                                self.Releases += scraper.scrape(imdbID,"(.*|S"+str("{:02d}".format(self.index))+"|"+imdbID+")")
+                                imdb_scraped = True
+                            if len(self.Releases) > 0:
+                                break
+                    #Set the episodes parent releases to be the newly scraped releases
+                    scraped_releases = copy.deepcopy(self.Releases)
+            #If there was nothing downloaded, attempt downloading again using the newly scraped releases
+            if not debrid_downloaded:
+                for release in self.Releases[:]:
+                    if not regex.match(self.deviation(),release.title,regex.I):
+                        self.Releases.remove(release)
+                debrid_downloaded, retry = self.debrid_download()
+            retryep = False
+            #If a season pack was downloaded, make sure there are episode releases available for missing versions before attempting to download
+            if debrid_downloaded:
+                refresh_ = True
+                attempt_episodes = False
+                for episode in self.Episodes:
+                    for version in copy.deepcopy(episode.versions()):
+                        for rule in version.rules[:]:
+                            if rule[0] == "bitrate":
+                                version.rules.remove(rule)
+                        test_releases = copy.deepcopy(scraped_releases)
+                        releases.sort(test_releases, version, False)
+                        if len(test_releases) > 0:
+                            attempt_episodes = True
+                            break
+                    if not attempt_episodes:
+                        episode.skip_download = True
+            #Check if all episodes were successfuly downloaded, download them or queue them to be ignored otherwise
+            for episode in self.Episodes:
+                if len(episode.versions()) > 0:
+                    downloaded = False
+                    retryep = True
+                    if not hasattr(episode,"skip_download"):
+                        downloaded, retryep = episode.download(library=library, parentReleases=scraped_releases)
                     if downloaded:
                         refresh_ = True
-                    if retry:
+                    if retryep:
                         episode.watch()
-                return refresh_, retry
-            else:
-                return True, retry
+            return refresh_, (retry or retryep)
         elif self.type == 'episode':
             for release in parentReleases:
                 if regex.match(self.deviation(), release.title, regex.I):
                     self.Releases += [release]
-            debrid_downloaded, retry = self.debrid_download()
+            debrid_downloaded = False
+            retry = True
+            if len(self.Releases) > 0:
+                debrid_downloaded, retry = self.debrid_download()
             if (not debrid_downloaded or retry) and not hasattr(self,"skip_scraping"):
                 if debrid_downloaded:
                     refresh_ = True
                 if self.isanime():
                     for title in self.alternate_titles[:3]:
-                        self.Releases += scraper.scrape(self.anime_query(title), self.deviation() + "("+imdbID+")?")
+                        self.Releases += scraper.scrape(self.anime_query(title), self.deviation() + "("+imdbID+")?(nyaa"+"|".join(self.alternate_titles)+")?")
                         if len(self.Releases) > 0:
                             break
                 if len(self.Releases) == 0 or not self.isanime():
@@ -1088,9 +1402,20 @@ class media:
                     season.version = self.version
                     season.downloaded()
         elif self.type == 'season':
+            filemode = False
             for episode in self.Episodes:
                 episode.version = self.version
-                episode.downloaded()
+                for file in self.Releases[0].files:
+                    if hasattr(file, 'match'):
+                        if file.match == episode.files()[0]:
+                            episode.version = self.version
+                            episode.downloaded()
+                            filemode = True
+                            break
+            if not filemode:
+                for episode in self.Episodes:
+                    episode.version = self.version
+                    episode.downloaded()
 
     def debrid_download(self,force=False):
         if len(self.Releases) > 0:
@@ -1148,9 +1473,10 @@ class media:
             for episode in self.Episodes:
                 files += episode.files()
         elif self.type == 'episode':
-            files += ['S' + str("{:02d}".format(self.parentIndex)) + 'E' + str("{:02d}".format(self.index)) + '']
-        if self.isanime():
-            files = ['(.*)']
+            if self.isanime():
+                files += ['[^A-DF-Z0-9\[]0*('+self.anime_count+'|'+str(self.index)+')(?![A-Z0-9]|\])']
+            else:
+                files += ['S' + str("{:02d}".format(self.parentIndex)) + 'E' + str("{:02d}".format(self.index)) + '']
         return files
 
     def bitrate(self):

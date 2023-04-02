@@ -19,7 +19,7 @@ def scrape(query, altquery):
         url = base_url + '/api/v1/search?query=' + query + '&type=search&limit=1000&offset=0'
         headers = {'X-Api-Key': api_key}
         try:
-            response = session.get(url, headers=headers)
+            response = session.get(url, headers=headers, timeout=60)
         except requests.exceptions.Timeout:
             ui_print('[prowlarr] error: prowlarr request timed out. Reduce the number of prowlarr indexers or make sure they are healthy.')
             return []
@@ -36,12 +36,6 @@ def scrape(query, altquery):
                 result.title = result.title.replace(' ', '.')
                 result.title = result.title.replace(':', '').replace("'", '')
                 result.title = regex.sub(r'\.+', ".", result.title)
-                if not altquery == '(.*)':
-                    variations = result.title.split('/')
-                    variations += result.title.split(']')
-                    for variation in variations:
-                        if regex.match(r'(' + altquery.replace('.', '\.').replace("\.*", ".*") + ')', variation,regex.I):
-                            result.title = variation
                 if regex.match(r'(' + altquery.replace('.', '\.').replace("\.*", ".*") + ')', result.title,regex.I) and result.protocol == 'torrent':
                     if hasattr(result, 'magnetUrl'):
                         if not result.magnetUrl == None:

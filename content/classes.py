@@ -555,10 +555,10 @@ class media:
                     return '[^A-Za-z0-9]*(' + title + ')'
             elif self.type == 'show':
                 title = title.replace('.' + str(self.year), '')
-                return '[^A-Za-z0-9]*(' + title + ':?.)(series.)?((\(?' + str(self.year) + '\)?.)|(complete.)|(seasons?.[0-9]+.[0-9]?[0-9]?.?)|(S[0-9]+.S?[0-9]?[0-9]?.?)|(S[0-9]+E[0-9]+))'
+                return '[^A-Za-z0-9]*(' + title + ':?.)(series.|[^A-Za-z0-9]+)?((\(?' + str(self.year) + '\)?.)|(complete.)|(seasons?.[0-9]+.[0-9]?[0-9]?.?)|(S[0-9]+.S?[0-9]?[0-9]?.?)|(S[0-9]+E[0-9]+))'
             elif self.type == 'season':
                 title = title.replace('.' + str(self.parentYear), '')
-                return '[^A-Za-z0-9]*(' + title + ':?.)(series.)?(\(?' + str(self.parentYear) + '\)?.)?(season.' + str(self.index) + '.|season.' + str("{:02d}".format(self.index)) + '.|S' + str("{:02d}".format(self.index)) + '.)'
+                return '[^A-Za-z0-9]*(' + title + ':?.)(series.|[^A-Za-z0-9]+)?(\(?' + str(self.parentYear) + '\)?.)?(season.' + str(self.index) + '\.|season.' + str("{:02d}".format(self.index)) + '\.|S' + str("{:02d}".format(self.index)) + '\.)'
             elif self.type == 'episode':
                 title = title.replace('.' + str(self.grandparentYear), '')
                 try:
@@ -672,7 +672,8 @@ class media:
         #get all versions
         versions = []
         for version in releases.sort.versions:
-            versions += [releases.sort.version(version[0], version[1], version[2], version[3])]
+            if not '\u0336' in version[0]:
+                versions += [releases.sort.version(version[0], version[1], version[2], version[3])]
         #update media items ignore count
         if self in media.ignore_queue:
             match = next((x for x in media.ignore_queue if self == x), None)
@@ -789,7 +790,8 @@ class media:
             match = next((x for x in media.ignore_queue if self == x), None)
             self.ignored_count = match.ignored_count
         for version in releases.sort.versions:
-            all_versions += [releases.sort.version(version[0], version[1], version[2], version[3])]
+            if not '\u0336' in version[0]:
+                all_versions += [releases.sort.version(version[0], version[1], version[2], version[3])]
         for version in all_versions[:]:
             if not version.applies(self):
                 all_versions.remove(version)
@@ -1012,23 +1014,22 @@ class media:
         except:
             return False
 
-    def collect(self):
+    def collect(self,refresh_=True):
         for refresh_service in refresh():
             if refresh_service.__module__ == self.__module__ or (self.__module__ in ["content.services.trakt","releases","content.services.overseerr","content.services.plex"] and refresh_service.__module__ in ["content.services.plex","content.services.jellyfin"]):
-                refresh_service(self)
+                if refresh_ or refresh_service.name == "Plex Lables":
+                    refresh_service(self)
             elif self.__module__ in ["content.services.plex","content.services.overseerr"] and refresh_service.__module__ == "content.services.trakt":
                 try:
-                    self.match('content.services.trakt')
-                    refresh_service(self)
+                    if refresh_ :
+                        self.match('content.services.trakt')
+                        refresh_service(self)
                 except:
                     ui_print("[trakt] error: adding item to trakt collection failed")
             else:
                 ui_print("error: library update service could not be determined",ui_settings.debug)
 
     def collected(self, list):
-        import content.services.plex as plex
-        import content.services.trakt as trakt
-        import content.services.overseerr as overseerr
         if self.type in ["movie","show"]:
             if self in list:
                 if self.type == "movie":
@@ -1143,7 +1144,7 @@ class media:
                         if not len(self.Releases) == 0:
                             self.year = year
                             break
-                    debrid_downloaded, retry = self.debrid_download(force=True)
+                    debrid_downloaded, retry = self.debrid_download(force=False)
                     if debrid_downloaded:
                         refresh_ = True
                         if not retry and (self.watchlist.autoremove == "both" or self.watchlist.autoremove == "movie"):
@@ -1184,11 +1185,11 @@ class media:
                                     imdb_scraped = True
                                 if len(self.Releases) > 0:
                                     break
+                        debrid.check(self)
                         parentReleases = copy.deepcopy(self.Releases)
                         # if there are more than 3 uncollected seasons, look for multi-season releases before downloading single-season releases
                         if len(self.Seasons) > 3:
                             # gather file information on scraped, cached releases
-                            debrid.check(self)
                             multi_season_releases = []
                             season_releases = [None] * len(self.Seasons)
                             minimum_episodes = len(self.files()) / 2
@@ -1262,12 +1263,13 @@ class media:
                     threads = []
                     # start thread for each season
                     for index, Season in enumerate(self.Seasons):
-                        t = Thread(target=download, args=(Season, library, parentReleases, results, index))
-                        threads.append(t)
-                        t.start()
-                    # wait for the threads to complete
-                    for t in threads:
-                        t.join()
+                        results[index] = Season.download(library=library, parentReleases=parentReleases)
+                    #     t = Thread(target=download, args=(Season, library, parentReleases, results, index))
+                    #     threads.append(t)
+                    #     t.start()
+                    # # wait for the threads to complete
+                    # for t in threads:
+                    #     t.join()
                     retry = False
                     for index, result in enumerate(results):
                         if result == None:
@@ -1288,8 +1290,9 @@ class media:
             # Set the episodes parent releases to be the seasons parent releases:
             scraped_releases = copy.deepcopy(parentReleases)
             # If there is more than one episode
-            if len(self.Episodes) > 1:
-                debrid_downloaded, retry = self.debrid_download()
+            if len(self.Episodes) > 2:
+                if self.season_pack(scraped_releases):
+                    debrid_downloaded, retry = self.debrid_download()
                 #If there is more than one episode missing, skip scraping for individual episodes
                 for episode in self.Episodes:
                     episode.skip_scraping = True
@@ -1313,13 +1316,16 @@ class media:
                             if len(self.Releases) > 0:
                                 break
                     #Set the episodes parent releases to be the newly scraped releases
+                    debrid.check(self)
                     scraped_releases = copy.deepcopy(self.Releases)
             #If there was nothing downloaded, attempt downloading again using the newly scraped releases
+            retry = False
             if not debrid_downloaded:
                 for release in self.Releases[:]:
                     if not regex.match(self.deviation(),release.title,regex.I):
                         self.Releases.remove(release)
-                debrid_downloaded, retry = self.debrid_download()
+                if self.season_pack(scraped_releases):
+                    debrid_downloaded, retry = self.debrid_download()
             retryep = False
             #If a season pack was downloaded, make sure there are episode releases available for missing versions before attempting to download
             if debrid_downloaded:
@@ -1378,8 +1384,7 @@ class media:
                     refresh_ = True
                 return refresh_, retry
             return debrid_downloaded, retry
-        if refresh_:
-            self.collect()
+        self.collect(refresh_)
 
     def downloaded(self):
         global imdb_scraped
@@ -1418,12 +1423,9 @@ class media:
                     episode.downloaded()
 
     def debrid_download(self,force=False):
-        if len(self.Releases) > 0:
-            ui_print("checking cache status for scraped releases on: [" + "],[".join(debrid.services.active) + "] ...")
         debrid.check(self)
         self.bitrate()
         if len(self.Releases) > 0:
-            ui_print("done")
             releases.print_releases(self.Releases,True)
         scraped_releases = copy.deepcopy(self.Releases)
         downloaded = []
@@ -1493,6 +1495,26 @@ class media:
             ui_print("set release bitrate using total "+self.type+" duration: " + "{:02d}h:{:02d}m".format(int(duration / 1000) // 3600, (int(duration / 1000) % 3600) // 60), ui_settings.debug)
         except:
             ui_print("error: couldnt set release bitrate",ui_settings.debug)
+
+    def season_pack(self,releases):
+        season_releases = -1
+        episode_releases = [-2] * len(self.Episodes)
+        for release in self.Releases:
+            if len(release.cached) > 0 and int(release.resolution) > season_releases:
+                season_releases = int(release.resolution)
+        for i,episode in enumerate(self.Episodes):
+            ep_match = regex.compile(episode.deviation(), regex.IGNORECASE)
+            for release in releases:
+                if len(release.cached) > 0 and int(release.resolution) >= season_releases and int(release.resolution) > episode_releases[i] and ep_match.match(release.title):
+                    episode_releases[i] = int(release.resolution)
+        lowest = 2160
+        for quality in episode_releases:
+            if quality < lowest:
+                lowest = quality
+        # If no cached episode release available for all episodes, or the quality is equal or lower to the cached season packs return True
+        if quality <= season_releases:
+            return True
+        return False
 
 def download(cls, library, parentReleases, result, index):
     result[index] = cls.download(library=library, parentReleases=parentReleases)

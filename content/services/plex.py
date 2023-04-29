@@ -18,7 +18,15 @@ def logerror(response):
     if not response.status_code == 200:
         ui_print("Plex error: " + str(response.content), debug=ui_settings.debug)
     if response.status_code == 401:
-        ui_print("plex error: (401 unauthorized): user token does not seem to work. check your plex user settings.")
+        name = ""
+        for user in users:
+            if user[1] in response.url:
+                name = user[0]
+                break
+        if name == "":
+            ui_print("plex error: (401 unauthorized): unnamed user token does not seem to work. check your plex user settings.")
+        else:
+            ui_print("plex error: (401 unauthorized): token for user '"+name+"' does not seem to work. check your plex user settings.")
 
 def get(url, timeout=60):
     ui_debug(f'[plex]: get {url}')
@@ -502,6 +510,119 @@ class library(classes.library):
             except:
                 ui_print("[plex] error: couldnt refresh libraries. Make sure you have setup a plex user!")
 
+    class lable(classes.refresh):
+
+        name = 'Plex Lables'
+
+        def setup(cls, new=False):
+            ui_cls("Options/Settings/Library Services/Library update services")
+            from settings import settings_list
+            settings = []
+            for category, allsettings in settings_list:
+                for setting in allsettings:
+                    settings += [setting]
+            if len(users) == 0:
+                print("It looks like you havent setup a plex user. Please set up a plex user first.")
+                print()
+                for setting in settings:
+                    if setting.name == "Plex users":
+                        setting.setup()
+            working = False
+            while not working:
+                try:
+                    response = get(library.url  + '/library/sections/?X-Plex-Token=' + users[0][1])
+                    working = True
+                    if len(response.MediaContainer.Directory) == 0:
+                        print("It looks like this server does not have any libraries set-up! Please open the plex webui, setup at least one library and point it to your mounted debrid service drive.")
+                        print()
+                        input("Press enter to try again: ")
+                        print()
+                        working = False
+                except:
+                    working = False
+                    print("It looks like your plex server could not be reached at '" + library.url + "'. Make sure that plex media server is running, that you have claimed the server and that you have created at least one plex library.")
+                    print()
+                    for setting in settings:
+                        if setting.name == "Plex server address":
+                            setting.setup()
+                    print()
+            if not new:
+                print()
+                print("nothing to edit!")
+                print()
+                time.sleep(3)
+            else:
+                if not library.lable.name in classes.refresh.active:
+                    classes.refresh.active += [library.lable.name]
+                print()
+                print("Successfully added plex lable update service!")
+                print()
+                time.sleep(3)
+
+        def call(element):
+            try:
+                tags = element.post_tags
+                retries = 0
+                while element not in current_library and retries < 6:
+                    time.sleep(10)
+                    _ = library(silent=True)
+                    retries += 1
+                library_item = next((x for x in current_library if element == x), None)
+                if library_item == None:
+                    ui_print('[plex] error: couldnt add lables - item: "' + element.query() + '" could not be found on server.')
+                    return
+                tags_string = ""
+                for tag in tags:
+                    tags_string = '&label%5B-1%5D.tag.tag=' + tag
+                    type_string = "1" if element.type == "movie" else "2"
+                    url = library.url + '/library/sections/' + str(library_item.librarySectionID) + '/all?type=' + type_string + '&id=' + library_item.ratingKey + '&label.locked=1' + tags_string + '&X-Plex-Token=' + users[0][1]
+                    response = session.put(url,headers=headers)
+                url = library.url + '/library/metadata/' + library_item.ratingKey + '?X-Plex-Token=' + users[0][1]
+                response = get(url)
+                library_item.__dict__.update(response.MediaContainer.Metadata[0].__dict__)
+            except Exception as e:
+                ui_print("[plex] error: couldnt add lables! Turn on debug printing for more info.")
+                ui_print(str(e), debug=ui_settings.debug)
+
+        def __new__(cls, element):
+            tags = []
+            try:
+                if not isinstance(element,classes.media):
+                    return
+                # Add user Tag
+                if hasattr(element,"requestedBy"):
+                    tags += [element.requestedBy.displayName]
+                elif isinstance(element.user[0],list):
+                    for user in element.user:
+                        tags += ["From: " + user[0]]
+                else:
+                    tags += ["From: " + element.user[0]]
+                # Add version Tag
+                version_tags = False
+                for version in element.downloaded_versions:
+                    if element.query() in version and not "Version: " +version.split("[")[-1][:-1] in tags:
+                        tags += ["Version: " +version.split("[")[-1][:-1]]
+                        version_tags = True
+                library_item = next((x for x in current_library if element == x), None)
+                # Return if no version tags and not collected
+                if library_item == None and version_tags == False:
+                    return
+                # Check existing Tags
+                if hasattr(library_item,"Label"):
+                    for lable in library_item.Label:
+                        if lable.tag in tags:
+                            tags.remove(lable.tag)
+                if len(tags) == 0:
+                    return
+                element.post_tags = tags
+                ui_print('[plex] adding lables: "' + '","'.join(tags) + '" to item: "' + element.query() + '"')
+                results = [None]
+                t = Thread(target=multi_init, args=(library.lable.call, element, results, 0))
+                t.start()
+            except Exception as e:
+                ui_print("[plex] error: couldnt add lables! Turn on debug printing for more info.")
+                ui_print(str(e), debug=ui_settings.debug)
+
     class ignore(classes.ignore):
 
         name = 'Plex Discover Watch Status'
@@ -635,7 +756,7 @@ class library(classes.library):
                 ui_print("[plex] error: couldnt check ignore status for item: " + str(e), debug=ui_settings.debug)
                 return False
 
-    def __new__(self):
+    def __new__(self,silent=False):
         global current_library
         list_ = []
         sections = []
@@ -653,7 +774,8 @@ class library(classes.library):
             ui_print("[plex error]: couldnt reach local plex server at: " + library.url + " to determine library sections. Make sure the address is correct, the server is running, and youve set up at least one library.")
         if len(sections) == 0:
             return list_
-        ui_print('[plex] getting plex library section/s "' + '","'.join(names) + '" ...')
+        if not silent:
+            ui_print('[plex] getting plex library section/s "' + '","'.join(names) + '" ...')
         for section,types in sections:
             if section == '':
                 continue
@@ -719,6 +841,10 @@ class library(classes.library):
                     match = next((x for x in current_library if item == x), None)
                     if hasattr(match,"Guid"):
                         item.Guid = match.Guid
+                    if hasattr(match,"Label"):
+                        item.Label = match.Label
+                    if hasattr(match,"librarySectionID"):
+                        item.librarySectionID = match.librarySectionID
                 item.EID = setEID(item)
                 if item.type == "show":
                     for season in item.Seasons:
@@ -734,8 +860,7 @@ class library(classes.library):
 
 def search(query, library=[]):
     query = query.replace(' ', '%20')
-    url = 'https://metadata.provider.plex.tv/library/search?query=' + query + '&limit=20&searchTypes=movies%2Ctv&includeMetadata=1&X-Plex-Token=' + \
-            users[0][1]
+    url = 'https://metadata.provider.plex.tv/library/search?query=' + query + '&limit=20&searchTypes=movies%2Ctv&includeMetadata=1&X-Plex-Token=' + users[0][1]
     response = get(url)
     try:
         return response.MediaContainer.SearchResult

@@ -1,6 +1,18 @@
 from base import *
 from ui.ui_print import *
 
+def strike(text):
+    result = ''
+    for c in text:
+        result = result + c + '\u0336'
+    return result
+
+def unstrike(text):
+    result = ''
+    for c in text:
+        result = result + (c if c != '\u0336' else '')
+    return result
+
 class release:
     # Define release attributes
     def __init__(self, source, type, title, files, size, download, seeders=0):
@@ -15,6 +27,7 @@ class release:
             if regex.search(r'(?<=btih:).*?(?=&)', str(self.download[0]), regex.I):
                 self.hash = regex.findall(r'(?<=btih:).*?(?=&)', str(self.download[0]), regex.I)[0]
         self.cached = []
+        self.checked = False
         self.wanted = 0
         self.unwanted = 0
         self.seeders = seeders
@@ -91,7 +104,7 @@ class sort:
                     print("0) Back")
                     indices = []
                     for index, version in enumerate(sort.versions):
-                        print(str(index + 1) + ') Edit version "' + version[0] + '"')
+                        print(str(index + 1) + ') Edit version "' + version[0] + '"' + (' (disabled)' if '\u0336' in version[0] else '') )
                         indices += [str(index + 1)]
                     print()
                     choice2 = input("Choose an action: ")
@@ -105,6 +118,7 @@ class sort:
             elif choice == "2":
                 ui_cls('Options/Settings/Scraper Settings/Versions/Add')
                 names = []
+                indices = []
                 name = "Id rather be watching the 1999 cinematic masterpiece 'The Mummy'."
                 names += [name]
                 for version in sort.versions[:]:
@@ -112,7 +126,20 @@ class sort:
                 while name in names:
                     name = input("Please provide a unique name for this version: ")
                 print()
-                default = copy.deepcopy(sort.versions[0])
+                if len(sort.versions) > 1:
+                    print("Please select a current version as a starting point for your new version: ")
+                    print()
+                    for index, version in enumerate(sort.versions):
+                        print(str(index + 1) + ') Duplicate version "' + version[0] + '"')
+                        indices += [str(index + 1)]
+                    print()
+                    choice2 = input("Please choose a version to duplicate: ")
+                    if choice2 in indices:
+                        default = copy.deepcopy(sort.versions[int(choice2)-1])
+                    else:
+                        return
+                else:
+                    default = copy.deepcopy(sort.versions[0])
                 sort.version.setup(name, default, new=True)
                 sort.versions += [default]
         return
@@ -182,6 +209,11 @@ class sort:
                 print("To change the scraping language of this version, type 'lang'")
                 print("To rename this version, type 'rename'")
                 if len(sort.versions) > 1:
+                    if not '\u0336' in version_[0] and len(list(x for x in sort.versions if not '\u0336' in x[0])) > 1:
+                        print("To disable this version, type 'disable'")
+                    elif '\u0336' in version_[0]:
+                        print("To enable this version, type 'enable'")
+                if len(sort.versions) > 1:
                     print("To delete this version, type 'remove'")
                 print()
                 choice = input("Choose an action: ")
@@ -214,6 +246,20 @@ class sort:
                             break
                     while name in names:
                         name = input("Please provide a unique name for this version: ")
+                    version[0] = name
+                    print()
+                elif choice == 'disable' and len(list(x for x in sort.versions if not '\u0336' in x[0])) > 1:
+                    for version in sort.versions[:]:
+                        if version[0] == name:
+                            break
+                    name = strike(name)
+                    version[0] = name
+                    print()
+                elif choice == 'enable' and '\u0336' in version_[0]:
+                    for version in sort.versions[:]:
+                        if version[0] == name:
+                            break
+                    name = unstrike(name)
                     version[0] = name
                     print()
                 elif choice == 'remove':
@@ -543,7 +589,7 @@ class sort:
                             return scraped_releases
                     return scraped_releases
                 except:
-                    ui_print("version rule exception - ignoring this rule")
+                    ui_print("version rule exception - ignoring " + self.attribute + " " + self.weight + ": "+ str(self.operator) + " " + str(self.value))
                     return scraped_releases
 
             def check(self):
@@ -654,7 +700,7 @@ class sort:
                             return scraped_releases
                     return scraped_releases
                 except:
-                    ui_print("version rule exception - ignoring this rule")
+                    ui_print("version rule exception - ignoring " + self.attribute + " " + self.weight + ": "+ str(self.operator) + " " + str(self.value))
                     return scraped_releases
 
             def check(self):
@@ -744,7 +790,7 @@ class sort:
                             return scraped_releases
                     return scraped_releases
                 except:
-                    ui_print("version rule exception - ignoring this rule")
+                    ui_print("version rule exception - ignoring " + self.attribute + " " + self.weight + ": "+ str(self.operator) + " " + str(self.value))
                     return scraped_releases
 
         class file_names(rule):
@@ -837,7 +883,7 @@ class sort:
                             return scraped_releases
                     return scraped_releases
                 except:
-                    ui_print("version rule exception - ignoring this rule")
+                    ui_print("version rule exception - ignoring " + self.attribute + " " + self.weight + ": "+ str(self.operator) + " " + str(self.value))
                     return scraped_releases
 
             def check(self):
@@ -868,7 +914,7 @@ class sort:
                                 if len(getattr(release, "files")) == 0:
                                     continue
                                 for version in release.files[:]:
-                                    if hasattr(version,"size"):
+                                    if hasattr(version,"name"):
                                         if self.operator.startswith("video") and not regex.search(video_formats,version.name,regex.I):
                                             continue
                                         if version.size <= float(self.value):
@@ -894,7 +940,7 @@ class sort:
                                 if len(getattr(release, "files")) == 0:
                                     continue
                                 for version in release.files[:]:
-                                    if hasattr(version,"size"):
+                                    if hasattr(version,"name"):
                                         if self.operator.startswith("video") and not regex.search(video_formats,version.name,regex.I):
                                             continue
                                         if version.size >= float(self.value):
@@ -920,7 +966,7 @@ class sort:
                                     continue
                                 for version in release.files:
                                     version.file_size_sorting = 0
-                                    if hasattr(version,"size"):
+                                    if hasattr(version,"name"):
                                         if self.operator.startswith("video") and not regex.search(video_formats,version.name,regex.I):
                                             continue
                                         if version.size >= float(self.value):
@@ -942,7 +988,7 @@ class sort:
                                     continue
                                 for version in release.files:
                                     version.file_size_sorting = 0
-                                    if hasattr(version,"size"):
+                                    if hasattr(version,"name"):
                                         if self.operator.startswith("video") and not regex.search(video_formats,version.name,regex.I):
                                             continue
                                         if version.size <= float(self.value):
@@ -959,7 +1005,7 @@ class sort:
                             return scraped_releases
                     return scraped_releases
                 except:
-                    ui_print("version rule exception - ignoring this rule")
+                    ui_print("version rule exception - ignoring " + self.attribute + " " + self.weight + ": "+ str(self.operator) + " " + str(self.value))
                     return scraped_releases
 
             def check(self):
@@ -1336,7 +1382,7 @@ class sort:
             ["title", "requirement", "exclude", "(3D)"],
             ["title", "requirement", "exclude", "(DO?VI?)"],
             ["title", "requirement", "exclude", "(HDR)"],
-            ["title", "preference", "include", "(EXTENDED|REMASTERED)"],
+            ["title", "preference", "include", "(EXTENDED|REMASTERED|DIRECTORS|THEATRICAL|UNRATED|UNCUT|CRITERION|ANNIVERSARY|COLLECTORS|LIMITED|SPECIAL|DELUXE|SUPERBIT|RESTORED|REPACK)"],
             ["size", "preference", "highest", ""],
             ["seeders", "preference", "highest", ""],
             ["size", "requirement", ">=", "0.1"],

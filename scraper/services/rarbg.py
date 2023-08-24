@@ -50,8 +50,7 @@ def scrape(query, altquery):
                     retries += -0.95
             except Exception as e:
                 response = None
-                ui_debug(f'[rarbg]: exception {e}')
-                ui_print('rarbg error: (parse exception)', debug=ui_settings.debug)
+                ui_debug(f'rarbg error: (parse exception)', debug=ui_settings.debug)
             retries += 1
             time.sleep(1 + random.randint(0, 2))
         if hasattr(response, "torrent_results"):

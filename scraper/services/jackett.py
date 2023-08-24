@@ -64,20 +64,16 @@ def scrape(query, altquery):
             response = session.get(url, timeout=60)
             ui_debug(f'[jackett]: request {url}')
         except requests.exceptions.Timeout:
-            ui_debug(f'[jackett]: request error {url}')
-            ui_print('[jackett] error: jackett request timed out. Reduce the number of jackett indexers, make sure your indexers are healthy and enable the jackett setting "CORS".')
+            ui_debug(f'[jackett] error: jackett request timed out. Reduce the number of jackett indexers, make sure your indexers are healthy and enable the jackett setting "CORS".')
             return []
         except :
-            ui_debug(f'[jackett]: request error {url}')
-            ui_print('[jackett] error: jackett couldnt be reached. Make sure your jackett base url is correctly formatted (default: http://localhost:9117).')
+            ui_debug(f'[jackett] error: jackett couldnt be reached. Make sure your jackett base url is correctly formatted (default: http://localhost:9117).')
             return []
         if not response.status_code == 200:
             if response.status_code in [401,403]:
-                ui_debug(f'[jackett]: request error {url}')
-                ui_print('[jackett] error '+str(response.status_code)+': it seems your api key is not working.')
+                ui_debug(f'[jackett] error '+str(response.status_code)+': it seems your api key is not working.')
             else:
-                ui_debug(f'[jackett]: request error {url}')
-                ui_print('[jackett] error '+str(response.status_code)+': it seems jackett is reachable, but jackett returned an internal error.')
+                ui_debug(f'[jackett] error '+str(response.status_code)+': it seems jackett is reachable, but jackett returned an internal error.')
             return []
         try:
             response = json.loads(response.content, object_hook=lambda d: SimpleNamespace(**d))
@@ -153,8 +149,7 @@ def resolve(result):
                     releases.release('[jackett: unnamed]', 'torrent', result.Title, [], float(result.Size) / 1000000000,[magnet], seeders=result.Seeders)]
             return scraped_releases
     except Exception as e:
-        ui_debug(f'[jackett]: exception {e}')
-        ui_print("[jackett] error: resolver couldnt get magnet/torrent for release: " + result.Title,ui_settings.debug)
+        ui_debug(f"[jackett] error: resolver couldnt get magnet/torrent for release: " + result.Title,ui_settings.debug)
         return scraped_releases
 
 # Multiprocessing watchlist method

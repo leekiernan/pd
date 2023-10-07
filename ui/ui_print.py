@@ -25,7 +25,8 @@ def logo(path='',update=""):
 
 def ui_debug(str):
     try :
-        ui_print(f'[debug] {str}'.format(**locals())) if ui_settings.debug == "true"
+        if ui_settings.debug == "true":
+            ui_print(f'[debug] {str}'.format(**locals()))
     except Exception as e:
         ui_print(f'[debug error] {e}')
 
